@@ -1,0 +1,1 @@
+ /Users/jorge/ProyectoFlutter/SoundSwarm/.dart_tool/flutter_build/9f17b25d310764d49139246a7ff24587/native_assets.json: 
