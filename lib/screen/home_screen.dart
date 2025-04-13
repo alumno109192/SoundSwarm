@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:soundswarm/model/youtube_video.dart';
 import 'package:soundswarm/screen/setting_screen.dart';
-import 'package:soundswarm/service/youtube_api_service.dart'; // Ensure this file defines the YouTubeApiService class
+import 'package:soundswarm/service/youtube_api_service.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:soundswarm/service/audio_service.dart';
 
@@ -15,6 +15,7 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   bool _isPlaying = false;
+  String? _currentThumbnailUrl; // URL de la miniatura actual
 
   @override
   Widget build(BuildContext context) {
@@ -28,7 +29,18 @@ class _HomeScreenState extends State<HomeScreen> {
             onPressed: () {
               showSearch(
                 context: context,
-                delegate: SongSearchDelegate(),
+                delegate: SongSearchDelegate(
+                  onThumbnailSelected: (thumbnailUrl) {
+                    setState(() {
+                      _currentThumbnailUrl = thumbnailUrl; // Actualizar la carátula
+                    });
+                  },
+                  onPlayStateChanged: (isPlaying) {
+                    setState(() {
+                      _isPlaying = isPlaying; // Actualizar el estado de reproducción
+                    });
+                  },
+                ),
               );
             },
           ),
@@ -110,8 +122,16 @@ class _HomeScreenState extends State<HomeScreen> {
               decoration: BoxDecoration(
                 color: Colors.grey[800],
                 borderRadius: BorderRadius.circular(10),
+                image: _currentThumbnailUrl != null
+                    ? DecorationImage(
+                        image: NetworkImage(_currentThumbnailUrl!),
+                        fit: BoxFit.cover,
+                      )
+                    : null,
               ),
-              child: const Icon(Icons.music_note, size: 50, color: Colors.white),
+              child: _currentThumbnailUrl == null
+                  ? const Icon(Icons.music_note, size: 50, color: Colors.white)
+                  : null,
             ),
             const SizedBox(height: 30),
             Row(
@@ -152,8 +172,16 @@ class _HomeScreenState extends State<HomeScreen> {
 
 class SongSearchDelegate extends SearchDelegate<String> {
   final YouTubeApiService _apiService = YouTubeApiService();
-  final AudioService _audioService = AudioService(); // Instancia persistente
+  final AudioService _audioService = AudioService();
   final AudioPlayer _audioPlayer = AudioPlayer();
+  final Function(String) onThumbnailSelected; // Callback para actualizar la carátula
+  final Function(bool) onPlayStateChanged; // Callback para actualizar el estado de reproducción
+  bool _isPlaying = false;
+
+  SongSearchDelegate({
+    required this.onThumbnailSelected,
+    required this.onPlayStateChanged,
+  });
 
   @override
   List<Widget>? buildActions(BuildContext context) {
@@ -200,14 +228,39 @@ class SongSearchDelegate extends SearchDelegate<String> {
                 subtitle: Text(video.channelTitle),
                 onTap: () async {
                   try {
-                    final audioUrl = await _audioService.getAudioUrl(video.videoId);
-                    await _audioPlayer.setUrl(audioUrl);
-                    _audioPlayer.play();
+                    if (_isPlaying) {
+                      // Pausar la reproducción
+                      await _audioPlayer.pause().then((_) {
+                        _isPlaying = false;
+                        onPlayStateChanged(false); // Actualizar el estado en el reproductor principal
+                      });
+                      if (context.mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(content: Text('Pausado: ${video.title}')),
+                        );
+                      }
+                    } else {
+                      // Reanudar o iniciar la reproducción
+                      final audioUrl = await _audioService.getAudioUrl(video.videoId);
+                      await _audioPlayer.setUrl(audioUrl);
+                      await _audioPlayer.play().then((_) {
+                        _isPlaying = true;
+                        onPlayStateChanged(true); // Actualizar el estado en el reproductor principal
 
-                    if (context.mounted) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(content: Text('Reproduciendo: ${video.title}')),
-                      );
+                        // Actualizar la carátula con la miniatura seleccionada
+                        onThumbnailSelected(video.thumbnailUrl);
+                      });
+
+                      if (context.mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(content: Text('Reproduciendo: ${video.title}')),
+                        );
+                      }
+
+                      // Cerrar el buscador y volver al reproductor
+                      if (context.mounted) {
+                        Navigator.pop(context);
+                      }
                     }
                   } catch (e) {
                     if (context.mounted) {
