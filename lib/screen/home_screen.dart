@@ -6,6 +6,7 @@ import 'package:soundswarm/service/youtube_api_service.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:soundswarm/service/audio_service.dart';
 import 'dart:math';
+import 'package:shared_preferences/shared_preferences.dart';
 // Añadir esta importación
 
 class HomeScreen extends StatefulWidget {
@@ -109,18 +110,49 @@ class _HomeScreenState extends State<HomeScreen> {
               decoration: BoxDecoration(
                 color: Colors.grey[800],
                 borderRadius: BorderRadius.circular(10),
-                image: _currentThumbnailUrl != null
+                image: _currentThumbnailUrl != null && _currentThumbnailUrl!.isNotEmpty
                     ? DecorationImage(
                         image: NetworkImage(_currentThumbnailUrl!),
                         fit: BoxFit.cover,
+                        onError: (exception, stackTrace) {
+                          // En caso de error al cargar la imagen
+                          print('Error al cargar imagen: $exception');
+                        },
                       )
                     : null,
               ),
-              child: _currentThumbnailUrl == null
+              child: _currentThumbnailUrl == null || _currentThumbnailUrl!.isEmpty
                   ? const Icon(Icons.music_note, size: 50, color: Colors.white)
                   : null,
             ),
-            const SizedBox(height: 30),
+            const SizedBox(height: 10),
+            if (_currentSong != null)
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 20),
+                child: Text(
+                  _currentSong!.title,
+                  style: const TextStyle(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 16,
+                  ),
+                  textAlign: TextAlign.center,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+            if (_currentSong != null)
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 20),
+                child: Text(
+                  _currentSong!.channelTitle,
+                  style: TextStyle(
+                    color: Colors.grey[600],
+                    fontSize: 14,
+                  ),
+                  textAlign: TextAlign.center,
+                ),
+              ),
+            const SizedBox(height: 20),
             Row(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
@@ -174,7 +206,7 @@ class _HomeScreenState extends State<HomeScreen> {
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
                 // Tiempo actual con estilo mejorado
-                Container(
+                SizedBox(
                   width: 45,
                   child: Text(
                     _formatDuration(_position),
@@ -227,7 +259,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   ),
                 ),
                 // Duración total con estilo mejorado
-                Container(
+                SizedBox(
                   width: 45,
                   child: Text(
                     _formatDuration(_duration),
@@ -305,12 +337,17 @@ class _HomeScreenState extends State<HomeScreen> {
       final audioService = AudioService();
       final audioUrl = await audioService.getAudioUrl(video.videoId);
       
+      // Primero actualizar la interfaz para dar feedback inmediato
+      setState(() {
+        _currentSong = video;
+        _currentThumbnailUrl = video.thumbnailUrl;
+        // No cambiamos _isPlaying aún porque aún no ha comenzado a reproducirse
+      });
+      
       await _audioPlayer.setUrl(audioUrl);
       await _audioPlayer.play();
       
       setState(() {
-        _currentSong = video;
-        _currentThumbnailUrl = video.thumbnailUrl;
         _isPlaying = true;
       });
       
@@ -359,13 +396,65 @@ class SongSearchDelegate extends SearchDelegate<String> {
   final Function(bool) onPlayStateChanged;
   final Function(YouTubeVideo)? onSongSelected; // Añadir esta línea
   bool _isPlaying = false;
-
+  
+  // Lista para almacenar el historial de búsquedas
+  List<String> _searchHistory = [];
+  
   SongSearchDelegate({
     required this.onThumbnailSelected,
     required this.onPlayStateChanged,
     required AudioPlayer audioPlayer, // Recibir el reproductor compartido
     this.onSongSelected, // Añadir este parámetro opcional
-  }): _audioPlayer = audioPlayer;
+  }): _audioPlayer = audioPlayer {
+    // Cargar el historial cuando se crea el delegado
+    _loadSearchHistory();
+  }
+  
+  // Método para cargar el historial desde SharedPreferences
+  Future<void> _loadSearchHistory() async {
+    final prefs = await SharedPreferences.getInstance();
+    setState(() {
+      _searchHistory = prefs.getStringList('search_history') ?? [];
+    });
+  }
+  
+  // Método para guardar una nueva búsqueda en el historial
+  Future<void> _saveSearch(String query) async {
+    if (query.trim().isEmpty) return;
+    
+    final prefs = await SharedPreferences.getInstance();
+    
+    // Remover la consulta si ya existe (para moverla al principio)
+    _searchHistory.remove(query);
+    
+    // Añadir la nueva consulta al principio
+    _searchHistory.insert(0, query);
+    
+    // Limitar el historial a 10 elementos
+    if (_searchHistory.length > 10) {
+      _searchHistory = _searchHistory.sublist(0, 10);
+    }
+    
+    // Guardar en SharedPreferences
+    await prefs.setStringList('search_history', _searchHistory);
+  }
+  
+  // Método para eliminar una búsqueda del historial
+  Future<void> _removeFromHistory(String query) async {
+    final prefs = await SharedPreferences.getInstance();
+    
+    _searchHistory.remove(query);
+    
+    // Guardar en SharedPreferences
+    await prefs.setStringList('search_history', _searchHistory);
+  }
+  
+  // Método auxiliar para actualizar el estado (no existe setState en SearchDelegate)
+  void setState(VoidCallback fn) {
+    fn();
+    // Forzar reconstrucción
+    query = query;
+  }
 
   @override
   List<Widget>? buildActions(BuildContext context) {
@@ -391,6 +480,10 @@ class SongSearchDelegate extends SearchDelegate<String> {
 
   @override
   Widget buildResults(BuildContext context) {
+    // Guardar la consulta en el historial cuando se busca
+    _saveSearch(query);
+    
+    // Resto del código existente...
     return FutureBuilder<List<YouTubeVideo>>(
       future: _apiService.searchVideos(query),
       builder: (context, snapshot) {
@@ -502,8 +595,34 @@ class SongSearchDelegate extends SearchDelegate<String> {
 
   @override
   Widget buildSuggestions(BuildContext context) {
-    return Center(
-      child: Text('Escribe para buscar canciones en YouTube'),
+    // Mostrar el historial de búsquedas
+    if (_searchHistory.isEmpty) {
+      return const Center(
+        child: Text('No hay búsquedas recientes'),
+      );
+    }
+    
+    return ListView.builder(
+      itemCount: _searchHistory.length,
+      itemBuilder: (context, index) {
+        final historyItem = _searchHistory[index];
+        return ListTile(
+          leading: const Icon(Icons.history),
+          title: Text(historyItem),
+          trailing: IconButton(
+            icon: const Icon(Icons.close),
+            onPressed: () {
+              _removeFromHistory(historyItem);
+              setState(() {});
+            },
+          ),
+          onTap: () {
+            // Usar la búsqueda del historial
+            query = historyItem;
+            showResults(context);
+          },
+        );
+      },
     );
   }
 

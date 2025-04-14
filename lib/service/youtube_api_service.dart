@@ -7,48 +7,84 @@ class YouTubeApiService {
   final String baseUrl = 'https://www.googleapis.com/youtube/v3/search';
 
   Future<List<YouTubeVideo>> searchVideos(String query) async {
-    final url = Uri.parse('$baseUrl?part=snippet&type=video&q=$query&key=$apiKey');
-    final response = await http.get(url);
+    // Codificar correctamente la query
+    final encodedQuery = Uri.encodeComponent(query);
+    final uri = Uri.parse('$baseUrl?part=snippet&type=video&q=$encodedQuery&key=$apiKey');
+    
+    print('Buscando con URL: ${uri.toString()}');
+    
+    try {
+      final response = await http.get(uri);
 
-    if (response.statusCode == 200) {
-      final data = jsonDecode(response.body);
-      final List items = data['items'];
-      return items.map((item) => YouTubeVideo.fromJson(item)).toList();
-    } else {
-      throw Exception('Error al buscar en YouTube: ${response.reasonPhrase}');
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        final items = data['items'] as List<dynamic>? ?? [];
+        
+        // Verificación adicional
+        final videos = <YouTubeVideo>[];
+        for (var item in items) {
+          try {
+            final video = YouTubeVideo.fromJson(item);
+            videos.add(video);
+          } catch (e) {
+            print('Error al procesar un video: $e');
+            // Continuar con el siguiente elemento
+          }
+        }
+        
+        return videos;
+      } else {
+        print('Error en búsqueda: ${response.statusCode} - ${response.body}');
+        return [];
+      }
+    } catch (e) {
+      print('Error en searchVideos: $e');
+      return [];
     }
   }
 
   Future<List<YouTubeVideo>> getRelatedVideos(String videoId, {String? title, String? artist}) async {
     try {
-      // 1. Intentar usar la API de videos relacionados primero
-      final apiKey = 'AIzaSyCOJ6QuVNRH_cJ5_PNrNUF8St9XMJmBHL4'; // Asegúrate de tener una API key válida
+      // Ya que relatedToVideoId parece no funcionar, usemos un enfoque alternativo
+      // basado en características de la canción actual
       
-      final response = await http.get(
-        Uri.parse('https://www.googleapis.com/youtube/v3/search?part=snippet&relatedToVideoId=$videoId&type=video&maxResults=10&key=$apiKey'),
-      );
+      // Crear una query basada en la información disponible
+      String searchQuery = '';
       
-      if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
-        final List items = data['items'];
-        return items.map((item) => YouTubeVideo.fromJson(item)).toList();
-      } else {
-        print('Error en la respuesta: ${response.statusCode} - ${response.reasonPhrase}');
-        
-        // 2. Si falla, intentar una búsqueda más inteligente basada en título y artista
-        final searchQuery = _buildSearchQuery(title, artist);
+      // Si tenemos título y artista, usarlos
+      if (title != null && title.isNotEmpty) {
+        // En lugar de usar relatedToVideoId, usamos información de la canción
+        searchQuery = _buildSearchQuery(title, artist);
         print('Buscando videos similares con: "$searchQuery"');
         
         if (searchQuery.isNotEmpty) {
           return await searchVideos(searchQuery);
-        } else {
-          // Si no pudimos construir una consulta específica, usar una genérica
-          return await searchVideos("música similar");
         }
       }
+      
+      // Si no podemos construir una query específica, usar el videoId para
+      // buscar en el mismo canal
+      return await searchVideos('music similar to $videoId');
     } catch (e) {
       print('Error obteniendo videos relacionados: $e');
-      return []; // Devolver lista vacía en caso de error
+      return [];
+    }
+  }
+
+  // Método para búsqueda alternativa cuando falla la API de videos relacionados
+  Future<List<YouTubeVideo>> _fallbackSearch(String? title, String? artist) async {
+    try {
+      final searchQuery = _buildSearchQuery(title, artist);
+      print('Buscando videos similares con: "$searchQuery"');
+      
+      if (searchQuery.isNotEmpty) {
+        return await searchVideos(searchQuery);
+      } else {
+        return await searchVideos("música popular");
+      }
+    } catch (e) {
+      print('Error en fallback search: $e');
+      return [];
     }
   }
 
@@ -56,7 +92,7 @@ class YouTubeApiService {
   String _buildSearchQuery(String? title, String? artist) {
     // Si no tenemos ni título ni artista, devolver cadena vacía
     if ((title == null || title.isEmpty) && (artist == null || artist.isEmpty)) {
-      return '';
+      return 'música popular';
     }
     
     final List<String> queryParts = [];
@@ -82,9 +118,14 @@ class YouTubeApiService {
     
     // Si no pudimos extraer información, usar el título como fallback
     if (queryParts.isEmpty && title != null && title.isNotEmpty) {
-      // Usar las primeras palabras del título como consulta
-      final words = title.split(' ').where((word) => word.length > 3).take(3);
+      // Usar solo las primeras palabras del título para evitar detalles específicos
+      final words = title.split(' ').take(3);
       queryParts.addAll(words);
+    }
+    
+    // Si aún no hay nada, usar una búsqueda genérica
+    if (queryParts.isEmpty) {
+      return 'música popular';
     }
     
     return queryParts.join(' ').trim();
