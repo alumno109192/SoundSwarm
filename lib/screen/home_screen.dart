@@ -20,6 +20,12 @@ class _HomeScreenState extends State<HomeScreen> {
   String? _currentThumbnailUrl;
   final AudioPlayer _audioPlayer = AudioPlayer();
   
+  // Añadir variables para la canción actual y canciones relacionadas
+  YouTubeVideo? _currentSong;
+  List<YouTubeVideo> _relatedSongs = [];
+  int _currentSongIndex = 0;
+  final YouTubeApiService _apiService = YouTubeApiService();
+  
   // Nuevas variables para el slider
   Duration _position = Duration.zero;
   Duration _duration = Duration.zero;
@@ -45,6 +51,9 @@ class _HomeScreenState extends State<HomeScreen> {
 
   // Función auxiliar para formatear duración en MM:SS
   String _formatDuration(Duration duration) {
+    // Ajustar la duración para mostrar el tiempo real
+    duration = Duration(seconds: duration.inSeconds ~/ 2);
+    
     String twoDigits(int n) => n.toString().padLeft(2, '0');
     final minutes = twoDigits(duration.inMinutes.remainder(60));
     final seconds = twoDigits(duration.inSeconds.remainder(60));
@@ -73,6 +82,13 @@ class _HomeScreenState extends State<HomeScreen> {
                     setState(() {
                       _isPlaying = isPlaying; // Actualizar el estado de reproducción
                     });
+                  },
+                  onSongSelected: (video) {
+                    setState(() {
+                      _currentSong = video;
+                    });
+                    // Cargar canciones relacionadas cuando se selecciona una canción
+                    _loadRelatedSongs(video.videoId);
                   },
                   audioPlayer: _audioPlayer, // Pasar el reproductor compartido
                 ),
@@ -110,7 +126,15 @@ class _HomeScreenState extends State<HomeScreen> {
               children: [
                 IconButton(
                   icon: const Icon(Icons.skip_previous, size: 35),
-                  onPressed: () {},
+                  onPressed: () async {
+                    if (_currentSong != null) {
+                      await _playPreviousSong();
+                    } else {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text('No hay una canción actual para volver atrás')),
+                      );
+                    }
+                  },
                 ),
                 IconButton(
                   icon: Icon(
@@ -133,7 +157,15 @@ class _HomeScreenState extends State<HomeScreen> {
                 ),
                 IconButton(
                   icon: const Icon(Icons.skip_next, size: 35),
-                  onPressed: () {},
+                  onPressed: () async {
+                    if (_currentSong != null) {
+                      await _playNextSong();
+                    } else {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text('No hay una canción actual para encontrar relacionadas')),
+                      );
+                    }
+                  },
                 ),
               ],
             ),
@@ -218,6 +250,105 @@ class _HomeScreenState extends State<HomeScreen> {
     _audioPlayer.dispose(); // Liberar recursos al cerrar
     super.dispose();
   }
+
+  Future<void> _loadRelatedSongs(String videoId) async {
+    try {
+      if (videoId.isEmpty) {
+        print('ID de video vacío, no se pueden cargar canciones relacionadas');
+        return;
+      }
+      
+      // Utilizar el API de YouTube para obtener videos relacionados, pasando título y artista
+      final relatedVideos = await _apiService.getRelatedVideos(
+        videoId, 
+        title: _currentSong?.title ?? '',
+        artist: _currentSong?.channelTitle ?? '',
+      );
+      
+      if (relatedVideos.isNotEmpty) {
+        setState(() {
+          _relatedSongs = relatedVideos;
+          _currentSongIndex = 0;
+        });
+        print('Se cargaron ${relatedVideos.length} canciones relacionadas');
+      } else {
+        print('No se encontraron canciones relacionadas');
+      }
+    } catch (e) {
+      print('Error al cargar canciones relacionadas: $e');
+    }
+  }
+
+  // Método para reproducir la siguiente canción
+  Future<void> _playNextSong() async {
+    if (_relatedSongs.isEmpty || _currentSongIndex >= _relatedSongs.length - 1) {
+      // Si no hay canciones relacionadas o estamos en la última, intentar cargar más
+      if (_currentSong != null) {
+        await _loadRelatedSongs(_currentSong!.videoId);
+      }
+      
+      // Si aún no hay canciones relacionadas, mostrar mensaje
+      if (_relatedSongs.isEmpty) {
+        return;
+      }
+    }
+    
+    _currentSongIndex++;
+    if (_currentSongIndex < _relatedSongs.length) {
+      await _playSong(_relatedSongs[_currentSongIndex]);
+    }
+  }
+
+  // Método para reproducir una canción
+  Future<void> _playSong(YouTubeVideo video) async {
+    try {
+      final audioService = AudioService();
+      final audioUrl = await audioService.getAudioUrl(video.videoId);
+      
+      await _audioPlayer.setUrl(audioUrl);
+      await _audioPlayer.play();
+      
+      setState(() {
+        _currentSong = video;
+        _currentThumbnailUrl = video.thumbnailUrl;
+        _isPlaying = true;
+      });
+      
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Reproduciendo: ${video.title}')),
+      );
+      
+      audioService.dispose();
+    } catch (e) {
+      print('Error al reproducir canción: $e');
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error al reproducir: $e')),
+      );
+    }
+  }
+
+  // Método para reproducir la canción anterior
+  Future<void> _playPreviousSong() async {
+    if (_relatedSongs.isEmpty || _currentSongIndex <= 0) {
+      // Si estamos en la primera canción o no hay canciones previas
+      if (_currentSongIndex == 0 && _relatedSongs.isNotEmpty) {
+        // Si estamos en la primera canción pero hay canciones relacionadas,
+        // simplemente reiniciar la canción actual
+        await _audioPlayer.seek(Duration.zero);
+        return;
+      }
+      
+      // Si no hay canciones relacionadas, mostrar mensaje
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('No hay canciones anteriores disponibles')),
+      );
+      return;
+    }
+    
+    // Decrementar el índice y reproducir la canción previa
+    _currentSongIndex--;
+    await _playSong(_relatedSongs[_currentSongIndex]);
+  }
 }
 
 class SongSearchDelegate extends SearchDelegate<String> {
@@ -226,12 +357,14 @@ class SongSearchDelegate extends SearchDelegate<String> {
   final AudioPlayer _audioPlayer; // Ya no inicializamos aquí, lo recibimos
   final Function(String) onThumbnailSelected;
   final Function(bool) onPlayStateChanged;
+  final Function(YouTubeVideo)? onSongSelected; // Añadir esta línea
   bool _isPlaying = false;
 
   SongSearchDelegate({
     required this.onThumbnailSelected,
     required this.onPlayStateChanged,
     required AudioPlayer audioPlayer, // Recibir el reproductor compartido
+    this.onSongSelected, // Añadir este parámetro opcional
   }): _audioPlayer = audioPlayer;
 
   @override
@@ -346,6 +479,7 @@ class SongSearchDelegate extends SearchDelegate<String> {
                         throw Exception('Error al iniciar reproducción: $e');
                       }
                     }
+                    onSongSelected?.call(video); // Notificar que se seleccionó una canción
                   } catch (e) {
                     print('Error detallado: $e');
                     if (context.mounted) {
