@@ -24,11 +24,16 @@ class _PlaylistsScreenState extends State<PlaylistsScreen> {
   }
 
   Future<void> _loadPlaylists() async {
+    if (!mounted) return;
+    
     setState(() {
       _isLoading = true;
     });
 
     await PlaylistService.initialize();
+    
+    if (!mounted) return;
+    
     setState(() {
       _playlists = PlaylistService.getPlaylists();
       _isLoading = false;
@@ -41,7 +46,7 @@ class _PlaylistsScreenState extends State<PlaylistsScreen> {
 
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
+      builder: (dialogContext) => AlertDialog(
         title: const Text('Nueva Playlist'),
         content: Column(
           mainAxisSize: MainAxisSize.min,
@@ -67,7 +72,7 @@ class _PlaylistsScreenState extends State<PlaylistsScreen> {
         ),
         actions: [
           TextButton(
-            onPressed: () => Navigator.pop(context),
+            onPressed: () => Navigator.pop(dialogContext),
             child: const Text('Cancelar'),
           ),
           TextButton(
@@ -78,12 +83,14 @@ class _PlaylistsScreenState extends State<PlaylistsScreen> {
                     ? descriptionController.text.trim()
                     : null;
                 
-                Navigator.pop(context);
+                Navigator.pop(dialogContext);
                 
-                final playlist = await PlaylistService.createPlaylist(
+                await PlaylistService.createPlaylist(
                   name, 
                   description: description,
                 );
+                
+                if (!mounted) return;
                 
                 setState(() {
                   _playlists = PlaylistService.getPlaylists();
@@ -182,26 +189,33 @@ class _PlaylistsScreenState extends State<PlaylistsScreen> {
                                     title: const Text('Eliminar', style: TextStyle(color: Colors.red)),
                                     onTap: () async {
                                       Navigator.pop(context);
+                                      
+                                      final confirmContext = context;
                                       final confirm = await showDialog<bool>(
-                                        context: context,
-                                        builder: (context) => AlertDialog(
+                                        context: confirmContext,
+                                        builder: (alertContext) => AlertDialog(
                                           title: const Text('Eliminar playlist'),
                                           content: Text('¿Estás seguro de eliminar "${playlist.name}"?'),
                                           actions: [
                                             TextButton(
-                                              onPressed: () => Navigator.pop(context, false),
+                                              onPressed: () => Navigator.pop(alertContext, false),
                                               child: const Text('Cancelar'),
                                             ),
                                             TextButton(
-                                              onPressed: () => Navigator.pop(context, true),
+                                              onPressed: () => Navigator.pop(alertContext, true),
                                               child: const Text('Eliminar', style: TextStyle(color: Colors.red)),
                                             ),
                                           ],
                                         ),
                                       );
                                       
+                                      if (!mounted) return;
+                                      
                                       if (confirm == true) {
                                         await PlaylistService.deletePlaylist(playlist.id);
+                                        
+                                        if (!mounted) return;
+                                        
                                         setState(() {
                                           _playlists = PlaylistService.getPlaylists();
                                         });
@@ -221,14 +235,20 @@ class _PlaylistsScreenState extends State<PlaylistsScreen> {
                           ),
                         );
                         
+                        if (!mounted) return;
+                        
                         // Recargar las playlists
-                        _loadPlaylists();
+                        await _loadPlaylists();
+                        
+                        if (!mounted) return;
                         
                         // Si se seleccionó una canción, reproducirla
                         if (result != null) {
                           AudioPlayerService().playSong(result);
-                          // Opcional: volver a la pantalla principal
-                          Navigator.pop(context);
+                          // Solo navegar de vuelta si todavía está montado
+                          if (mounted) {
+                            Navigator.pop(context);
+                          }
                         }
                       },
                     );

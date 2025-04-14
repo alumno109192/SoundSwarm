@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:soundswarm/model/playlist.dart';
 import 'package:soundswarm/model/youtube_video.dart';
 import 'package:soundswarm/service/playlist_service.dart';
-import 'package:soundswarm/service/audio_player_service.dart';
 
 class PlaylistDetailScreen extends StatefulWidget {
   final String playlistId;

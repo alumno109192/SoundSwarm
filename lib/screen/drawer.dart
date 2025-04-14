@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:soundswarm/screen/setting_screen.dart';
 import 'package:soundswarm/screen/playlists_screen.dart';
-import 'package:soundswarm/service/auth_service.dart';
 
 class AppDrawer extends StatefulWidget {
   const AppDrawer({super.key});
@@ -11,12 +10,9 @@ class AppDrawer extends StatefulWidget {
 }
 
 class _AppDrawerState extends State<AppDrawer> {
-  bool _isLoading = false;
 
   @override
   Widget build(BuildContext context) {
-    final isLoggedIn = AuthService.isSignedIn();
-    final currentUser = AuthService.currentUser;
 
     return Drawer(
       child: ListView(
