@@ -1,11 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:soundswarm/model/youtube_video.dart';
-import 'package:soundswarm/screen/setting_screen.dart';
+import 'package:soundswarm/screen/drawer.dart';
 import 'package:soundswarm/service/youtube_api_service.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:soundswarm/service/audio_service.dart';
 import 'dart:math';
+// Añadir esta importación
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -80,71 +81,7 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
         ],
       ),
-      drawer: Drawer(
-        child: ListView(
-          padding: EdgeInsets.zero,
-          children: [
-            const DrawerHeader(
-              decoration: BoxDecoration(
-                color: Colors.blue,
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisAlignment: MainAxisAlignment.end,
-                children: [
-                  CircleAvatar(
-                    backgroundColor: Colors.white,
-                    child: Icon(Icons.person),
-                  ),
-                  SizedBox(height: 10),
-                  Text(
-                    'SoundSwarm',
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontSize: 24,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            ListTile(
-              leading: const Icon(Icons.library_music),
-              title: const Text('My Library'),
-              onTap: () {
-                Navigator.pop(context);
-              },
-            ),
-            ListTile(
-              leading: const Icon(Icons.playlist_play),
-              title: const Text('Playlists'),
-              onTap: () {
-                Navigator.pop(context);
-              },
-            ),
-            ListTile(
-              leading: const Icon(Icons.download),
-              title: const Text('Downloads'),
-              onTap: () {
-                Navigator.pop(context);
-              },
-            ),
-            const Divider(),
-            ListTile(
-              leading: const Icon(Icons.settings),
-              title: const Text('Settings'),
-              onTap: () {
-                Navigator.pop(context);
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (context) => const SettingsScreen(),
-                  ),
-                );
-              },
-            ),
-          ],
-        ),
-      ),
+      drawer: const AppDrawer(), // Usar el drawer separado aquí
       body: Padding(
         padding: const EdgeInsets.all(20.0),
         child: Column(
@@ -230,8 +167,8 @@ class _HomeScreenState extends State<HomeScreen> {
                     ),
                     child: Slider(
                       min: 0,
-                      max: _duration.inSeconds.toDouble() > 0 ? _duration.inSeconds.toDouble() : 1.0,
-                      value: min(_position.inSeconds.toDouble(), _duration.inSeconds.toDouble()),
+                      max: _duration.inSeconds.toDouble()/2,
+                      value: min(_position.inSeconds.toDouble(), _duration.inSeconds.toDouble()/2),
                       // Añadir etiqueta que muestra el tiempo al arrastrar
                       label: _formatDuration(Duration(seconds: _position.inSeconds)),
                       onChanged: (value) {
