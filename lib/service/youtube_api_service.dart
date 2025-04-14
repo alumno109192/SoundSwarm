@@ -45,26 +45,34 @@ class YouTubeApiService {
 
   Future<List<YouTubeVideo>> getRelatedVideos(String videoId, {String? title, String? artist}) async {
     try {
-      // Ya que relatedToVideoId parece no funcionar, usemos un enfoque alternativo
-      // basado en características de la canción actual
-      
-      // Crear una query basada en la información disponible
-      String searchQuery = '';
-      
-      // Si tenemos título y artista, usarlos
+      // Extraer el género actual si está disponible
+      String currentGenre = '';
       if (title != null && title.isNotEmpty) {
-        // En lugar de usar relatedToVideoId, usamos información de la canción
-        searchQuery = _buildSearchQuery(title, artist);
-        print('Buscando videos similares con: "$searchQuery"');
-        
-        if (searchQuery.isNotEmpty) {
-          return await searchVideos(searchQuery);
+        List<String> genres = _extractGenres(title);
+        if (genres.isNotEmpty) {
+          currentGenre = genres.first;
         }
       }
       
-      // Si no podemos construir una query específica, usar el videoId para
-      // buscar en el mismo canal
-      return await searchVideos('music similar to $videoId');
+      // Construir una consulta específica del género
+      String searchQuery;
+      if (currentGenre.isNotEmpty) {
+        // Priorizar el género (añadir más términos específicos del género)
+        searchQuery = '$currentGenre música $currentGenre';
+        
+        // Si también tenemos un artista, usarlo como término secundario
+        if (artist != null && artist.isNotEmpty) {
+          searchQuery = '$searchQuery $artist';
+        }
+        
+        print('Buscando música del género: $currentGenre');
+      } else {
+        // Usar el método estándar si no detectamos un género
+        searchQuery = _buildSearchQuery(title, artist);
+      }
+      
+      print('Buscando videos similares con: "$searchQuery"');
+      return await searchVideos(searchQuery);
     } catch (e) {
       print('Error obteniendo videos relacionados: $e');
       return [];
@@ -90,18 +98,20 @@ class YouTubeApiService {
 
   // Método auxiliar para construir una consulta segura
   String _buildSearchQuery(String? title, String? artist) {
-    // Si no tenemos ni título ni artista, devolver cadena vacía
+    // Si no tenemos ni título ni artista, devolver búsqueda genérica
     if ((title == null || title.isEmpty) && (artist == null || artist.isEmpty)) {
       return 'música popular';
     }
     
     final List<String> queryParts = [];
     
-    // Extraer género si tenemos un título
+    // Extraer género si tenemos un título y darle prioridad
     if (title != null && title.isNotEmpty) {
       final genres = _extractGenres(title);
       if (genres.isNotEmpty) {
+        // Duplicar el género al inicio para darle más peso
         queryParts.add(genres.first);
+        queryParts.add(genres.first + ' música');
       }
     }
     
@@ -133,21 +143,27 @@ class YouTubeApiService {
 
   // Métodos auxiliares para extraer información del título
   List<String> _extractGenres(String title) {
-    // Lista de géneros musicales populares para detectar
+    // Lista ampliada de géneros musicales para detectar
     final genreKeywords = {
-      'bachata': ['bachata'],
-      'salsa': ['salsa'],
-      'reggaeton': ['reggaeton', 'reggaetón', 'regeton'],
+      'bachata': ['bachata', 'bachatero', 'bachatera'],
+      'salsa': ['salsa', 'salsero', 'salsera'],
+      'reggaeton': ['reggaeton', 'reggaetón', 'regeton', 'regueton'],
       'merengue': ['merengue'],
+      'dembow': ['dembow', 'dembo'],
+      'latin': ['latin', 'latino', 'latina'],
       'pop': ['pop'],
       'rock': ['rock'],
-      'hip hop': ['hip hop', 'rap'],
-      'electronic': ['electronic', 'edm', 'house', 'techno'],
+      'hip hop': ['hip hop', 'rap', 'trap'],
+      'electronic': ['electronic', 'edm', 'house', 'techno', 'trance', 'dubstep'],
       'r&b': ['r&b', 'rnb', 'rhythm and blues'],
       'jazz': ['jazz'],
-      'classical': ['classical', 'orchestra'],
+      'classical': ['classical', 'orchestra', 'piano solo'],
       'country': ['country'],
-      // Añadir más géneros según sea necesario
+      'flamenco': ['flamenco', 'rumba'],
+      'mariachi': ['mariachi', 'ranchera'],
+      'cumbia': ['cumbia'],
+      'vallenato': ['vallenato'],
+      // Muchos más géneros...
     };
     
     final titleLower = title.toLowerCase();
