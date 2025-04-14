@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:soundswarm/model/youtube_video.dart';
 
@@ -11,7 +12,9 @@ class YouTubeApiService {
     final encodedQuery = Uri.encodeComponent(query);
     final uri = Uri.parse('$baseUrl?part=snippet&type=video&q=$encodedQuery&key=$apiKey');
     
-    print('Buscando con URL: ${uri.toString()}');
+    if (kDebugMode) {
+      print('Buscando con URL: ${uri.toString()}');
+    }
     
     try {
       final response = await http.get(uri);
@@ -27,18 +30,24 @@ class YouTubeApiService {
             final video = YouTubeVideo.fromJson(item);
             videos.add(video);
           } catch (e) {
-            print('Error al procesar un video: $e');
+            if (kDebugMode) {
+              print('Error al procesar un video: $e');
+            }
             // Continuar con el siguiente elemento
           }
         }
         
         return videos;
       } else {
-        print('Error en búsqueda: ${response.statusCode} - ${response.body}');
+        if (kDebugMode) {
+          print('Error en búsqueda: ${response.statusCode} - ${response.body}');
+        }
         return [];
       }
     } catch (e) {
-      print('Error en searchVideos: $e');
+      if (kDebugMode) {
+        print('Error en searchVideos: $e');
+      }
       return [];
     }
   }
@@ -65,16 +74,22 @@ class YouTubeApiService {
           searchQuery = '$searchQuery $artist';
         }
         
-        print('Buscando música del género: $currentGenre');
+        if (kDebugMode) {
+          print('Buscando música del género: $currentGenre');
+        }
       } else {
         // Usar el método estándar si no detectamos un género
         searchQuery = _buildSearchQuery(title, artist);
       }
       
-      print('Buscando videos similares con: "$searchQuery"');
+      if (kDebugMode) {
+        print('Buscando videos similares con: "$searchQuery"');
+      }
       return await searchVideos(searchQuery);
     } catch (e) {
-      print('Error obteniendo videos relacionados: $e');
+      if (kDebugMode) {
+        print('Error obteniendo videos relacionados: $e');
+      }
       return [];
     }
   }
@@ -95,7 +110,7 @@ class YouTubeApiService {
       if (genres.isNotEmpty) {
         // Duplicar el género al inicio para darle más peso
         queryParts.add(genres.first);
-        queryParts.add(genres.first + ' música');
+        queryParts.add('${genres.first} música');
       }
     }
     

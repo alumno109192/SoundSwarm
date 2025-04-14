@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:googleapis/youtube/v3.dart';
 import 'package:http/http.dart' as http;
@@ -21,12 +22,16 @@ class AuthService {
       if (account != null) {
         // Obtener autorización para acceder a YouTube
         await account.authentication;
-        print('Usuario autenticado: ${account.displayName}');
+        if (kDebugMode) {
+          print('Usuario autenticado: ${account.displayName}');
+        }
       }
       
       return account;
     } catch (e) {
-      print('Error en el inicio de sesión: $e');
+      if (kDebugMode) {
+        print('Error en el inicio de sesión: $e');
+      }
       return null;
     }
   }
@@ -35,7 +40,9 @@ class AuthService {
   static Future<void> signOut() async {
     await _googleSignIn.signOut();
     _currentUser = null;
-    print('Sesión cerrada');
+    if (kDebugMode) {
+      print('Sesión cerrada');
+    }
   }
 
   // Verificar si el usuario está conectado

@@ -76,12 +76,17 @@ class _AppDrawerState extends State<AppDrawer> {
                                     if (isLoggedIn) {
                                       // Cerrar sesión
                                       await AuthService.signOut();
+                                      if (!context.mounted) return;
+                                      
+                                      // Una vez verificado mounted, podemos usar context
                                       ScaffoldMessenger.of(context).showSnackBar(
                                         const SnackBar(content: Text('Sesión cerrada')),
                                       );
                                     } else {
                                       // Iniciar sesión
                                       final account = await AuthService.signIn();
+                                      if (!context.mounted) return;
+                                      
                                       if (account != null) {
                                         ScaffoldMessenger.of(context).showSnackBar(
                                           SnackBar(
@@ -97,13 +102,17 @@ class _AppDrawerState extends State<AppDrawer> {
                                       }
                                     }
                                   } catch (e) {
+                                    if (!mounted) return;
+                                    
                                     ScaffoldMessenger.of(context).showSnackBar(
                                       SnackBar(content: Text('Error: $e')),
                                     );
                                   } finally {
-                                    setState(() {
-                                      _isLoading = false;
-                                    });
+                                    if (mounted) {
+                                      setState(() {
+                                        _isLoading = false;
+                                      });
+                                    }
                                   }
                                 },
                               ),
@@ -173,6 +182,7 @@ class _AppDrawerState extends State<AppDrawer> {
             leading: const Icon(Icons.settings),
             title: const Text('Settings'),
             onTap: () {
+              // No hay operaciones asíncronas aquí, así que no necesitamos verificar mounted
               Navigator.pop(context);
               Navigator.push(
                 context,

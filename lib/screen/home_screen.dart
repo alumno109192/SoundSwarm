@@ -8,6 +8,7 @@ import 'package:soundswarm/service/audio_service.dart';
 import 'dart:math';
 import 'package:shared_preferences/shared_preferences.dart';
 // Añadir esta importación
+import 'package:flutter/foundation.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -116,7 +117,9 @@ class _HomeScreenState extends State<HomeScreen> {
                         fit: BoxFit.cover,
                         onError: (exception, stackTrace) {
                           // En caso de error al cargar la imagen
-                          print('Error al cargar imagen: $exception');
+                          if (kDebugMode) {
+                            print('Error al cargar imagen: $exception');
+                          }
                         },
                       )
                     : null,
@@ -252,7 +255,9 @@ class _HomeScreenState extends State<HomeScreen> {
                             });
                           }
                         } catch (e) {
-                          print('Error al buscar posición: $e');
+                          if (kDebugMode) {
+                            print('Error al buscar posición: $e');
+                          }
                         }
                       },
                     ),
@@ -286,7 +291,9 @@ class _HomeScreenState extends State<HomeScreen> {
   Future<void> _loadRelatedSongs(String videoId) async {
     try {
       if (videoId.isEmpty) {
-        print('ID de video vacío, no se pueden cargar canciones relacionadas');
+        if (kDebugMode) {
+          print('ID de video vacío, no se pueden cargar canciones relacionadas');
+        }
         return;
       }
       
@@ -302,12 +309,18 @@ class _HomeScreenState extends State<HomeScreen> {
           _relatedSongs = relatedVideos;
           _currentSongIndex = 0;
         });
-        print('Se cargaron ${relatedVideos.length} canciones relacionadas');
+        if (kDebugMode) {
+          print('Se cargaron ${relatedVideos.length} canciones relacionadas');
+        }
       } else {
-        print('No se encontraron canciones relacionadas');
+        if (kDebugMode) {
+          print('No se encontraron canciones relacionadas');
+        }
       }
     } catch (e) {
-      print('Error al cargar canciones relacionadas: $e');
+      if (kDebugMode) {
+        print('Error al cargar canciones relacionadas: $e');
+      }
     }
   }
 
@@ -341,11 +354,12 @@ class _HomeScreenState extends State<HomeScreen> {
       setState(() {
         _currentSong = video;
         _currentThumbnailUrl = video.thumbnailUrl;
-        // No cambiamos _isPlaying aún porque aún no ha comenzado a reproducirse
       });
       
       await _audioPlayer.setUrl(audioUrl);
       await _audioPlayer.play();
+      
+      if (!mounted) return; // Usar mounted, no context.mounted, en un State
       
       setState(() {
         _isPlaying = true;
@@ -357,7 +371,12 @@ class _HomeScreenState extends State<HomeScreen> {
       
       audioService.dispose();
     } catch (e) {
-      print('Error al reproducir canción: $e');
+      if (kDebugMode) {
+        print('Error al reproducir canción: $e');
+      }
+      
+      if (!mounted) return; // Usar mounted, no context.mounted
+      
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Error al reproducir: $e')),
       );
@@ -374,6 +393,8 @@ class _HomeScreenState extends State<HomeScreen> {
         await _audioPlayer.seek(Duration.zero);
         return;
       }
+      
+      if (!mounted) return; // Agregar verificación antes de usar context
       
       // Si no hay canciones relacionadas, mostrar mensaje
       ScaffoldMessenger.of(context).showSnackBar(
@@ -529,7 +550,9 @@ class SongSearchDelegate extends SearchDelegate<String> {
                       final audioUrl = await _audioService.getAudioUrl(video.videoId);
                       
                       // Debugging
-                      print('URL de audio: $audioUrl');
+                      if (kDebugMode) {
+                        print('URL de audio: $audioUrl');
+                      }
                       
                       // Verificar que la URL sea válida
                       if (audioUrl.isEmpty) {
@@ -540,16 +563,22 @@ class SongSearchDelegate extends SearchDelegate<String> {
                       try {
                         await _audioPlayer.setUrl(audioUrl);
                       } catch (e) {
-                        print('Error al configurar URL: $e');
+                        if (kDebugMode) {
+                          print('Error al configurar URL: $e');
+                        }
                         throw Exception('Error al configurar reproductor: $e');
                       }
                       
                       // Esperar a que la duración esté disponible
                       try {
                         final duration = await _audioPlayer.durationStream.first;
-                        print('Duración de la canción: ${duration?.inSeconds ?? 0} segundos');
+                        if (kDebugMode) {
+                          print('Duración de la canción: ${duration?.inSeconds ?? 0} segundos');
+                        }
                       } catch (e) {
-                        print('Error al obtener duración: $e');
+                        if (kDebugMode) {
+                          print('Error al obtener duración: $e');
+                        }
                         // Continuar a pesar del error de duración
                       }
                       
@@ -568,13 +597,17 @@ class SongSearchDelegate extends SearchDelegate<String> {
                           Navigator.pop(context);
                         }
                       } catch (e) {
-                        print('Error específico al reproducir: $e');
+                        if (kDebugMode) {
+                          print('Error específico al reproducir: $e');
+                        }
                         throw Exception('Error al iniciar reproducción: $e');
                       }
                     }
                     onSongSelected?.call(video); // Notificar que se seleccionó una canción
                   } catch (e) {
-                    print('Error detallado: $e');
+                    if (kDebugMode) {
+                      print('Error detallado: $e');
+                    }
                     if (context.mounted) {
                       ScaffoldMessenger.of(context).showSnackBar(
                         SnackBar(

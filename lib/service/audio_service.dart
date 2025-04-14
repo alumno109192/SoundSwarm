@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:youtube_explode_dart/youtube_explode_dart.dart';
 
 class AudioService {
@@ -5,7 +6,9 @@ class AudioService {
 
   Future<String> getAudioUrl(String videoId) async {
     try {
-      print('Obteniendo URL para video ID: $videoId');
+      if (kDebugMode) {
+        print('Obteniendo URL para video ID: $videoId');
+      }
       
       // Obtener el manifiesto de streams
       final StreamManifest manifest = await _youtubeExplode.videos.streams.getManifest(videoId);
@@ -14,7 +17,9 @@ class AudioService {
       final audioStreams = manifest.audioOnly.sortByBitrate();
       
       if (audioStreams.isEmpty) {
-        print('No se encontraron streams de audio');
+        if (kDebugMode) {
+          print('No se encontraron streams de audio');
+        }
         throw Exception('No se encontraron streams de audio para este video');
       }
       
@@ -22,7 +27,9 @@ class AudioService {
       final audioStream = audioStreams.last;
       final url = audioStream.url.toString();
       
-      print('URL obtenida: $url');
+      if (kDebugMode) {
+        print('URL obtenida: $url');
+      }
       
       // Verificar que la URL sea válida
       if (url.isEmpty) {
@@ -31,7 +38,9 @@ class AudioService {
       
       return url;
     } catch (e) {
-      print('Error en AudioService.getAudioUrl: $e');
+      if (kDebugMode) {
+        print('Error en AudioService.getAudioUrl: $e');
+      }
       throw Exception('No se pudo obtener el audio: $e');
     }
   }
