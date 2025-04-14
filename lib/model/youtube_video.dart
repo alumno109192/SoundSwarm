@@ -15,6 +15,16 @@ class YouTubeVideo {
     required this.publishedAt,
   });
 
+  // Método toJson correcto (cambiar de factory a método de instancia)
+  Map<String, dynamic> toJson() => {
+    'videoId': videoId,
+    'title': title,
+    'description': description,
+    'thumbnailUrl': thumbnailUrl,
+    'channelTitle': channelTitle,
+    'publishedAt': publishedAt,
+  };
+
   factory YouTubeVideo.fromJson(Map<String, dynamic> json) {
     // Obtener el ID del video de forma segura
     final String videoId = json['id']?['videoId'] ?? '';

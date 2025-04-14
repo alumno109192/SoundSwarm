@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'screen/home_screen.dart';
 
 void main() {
+  WidgetsFlutterBinding.ensureInitialized(); // Agregar esta línea
   runApp(const MyApp());
 }
 

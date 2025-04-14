@@ -1,33 +1,30 @@
 import 'package:flutter/foundation.dart';
 import 'package:google_sign_in/google_sign_in.dart';
-import 'package:googleapis/youtube/v3.dart';
 import 'package:http/http.dart' as http;
 
 class AuthService {
-  static final GoogleSignIn _googleSignIn = GoogleSignIn(
-    scopes: [
-      'https://www.googleapis.com/auth/youtube.readonly',
-    ],
-  );
-
+  // Inicializar sin scopes para reducir complejidad
+  static final GoogleSignIn _googleSignIn = GoogleSignIn();
   static GoogleSignInAccount? _currentUser;
+  
   static GoogleSignInAccount? get currentUser => _currentUser;
 
-  // Iniciar sesión con Google/YouTube
+  // Iniciar sesión con Google
   static Future<GoogleSignInAccount?> signIn() async {
     try {
-      final GoogleSignInAccount? account = await _googleSignIn.signIn();
-      _currentUser = account;
+      // Primero, verificar si ya hay una sesión activa
+      _currentUser = await _googleSignIn.signInSilently();
       
-      if (account != null) {
-        // Obtener autorización para acceder a YouTube
-        await account.authentication;
+      // Si no hay sesión, intentar el flujo completo
+      _currentUser ??= await _googleSignIn.signIn();
+      
+      if (_currentUser != null) {
         if (kDebugMode) {
-          print('Usuario autenticado: ${account.displayName}');
+          print('Usuario autenticado: ${_currentUser!.displayName}');
         }
       }
       
-      return account;
+      return _currentUser;
     } catch (e) {
       if (kDebugMode) {
         print('Error en el inicio de sesión: $e');
@@ -38,25 +35,22 @@ class AuthService {
 
   // Cerrar sesión
   static Future<void> signOut() async {
-    await _googleSignIn.signOut();
-    _currentUser = null;
-    if (kDebugMode) {
-      print('Sesión cerrada');
+    try {
+      await _googleSignIn.signOut();
+      _currentUser = null;
+      if (kDebugMode) {
+        print('Sesión cerrada');
+      }
+    } catch (e) {
+      if (kDebugMode) {
+        print('Error al cerrar sesión: $e');
+      }
     }
   }
 
   // Verificar si el usuario está conectado
   static bool isSignedIn() {
     return _currentUser != null;
-  }
-
-  // Obtener cliente autorizado para la API de YouTube
-  static Future<YouTubeApi?> getYouTubeApi() async {
-    if (_currentUser == null) return null;
-    
-    final auth = await _currentUser!.authentication;
-    final client = GoogleAuthClient(auth.accessToken!);
-    return YouTubeApi(client);
   }
 }
 

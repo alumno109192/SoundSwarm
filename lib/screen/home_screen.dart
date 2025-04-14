@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:soundswarm/model/youtube_video.dart';
 import 'package:soundswarm/screen/drawer.dart';
+import 'package:soundswarm/service/audio_player_service.dart';
 import 'package:soundswarm/service/youtube_api_service.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:soundswarm/service/audio_service.dart';
@@ -9,6 +10,7 @@ import 'dart:math';
 import 'package:shared_preferences/shared_preferences.dart';
 // Añadir esta importación
 import 'package:flutter/foundation.dart';
+import 'package:soundswarm/service/playlist_service.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -49,6 +51,9 @@ class _HomeScreenState extends State<HomeScreen> {
         _duration = duration ?? Duration.zero;
       });
     });
+
+    // Configurar callback para reproducir canciones desde otras pantallas
+    AudioPlayerService().setPlaySongCallback(_playSong);
   }
 
   // Función auxiliar para formatear duración en MM:SS
@@ -522,8 +527,18 @@ class SongSearchDelegate extends SearchDelegate<String> {
               final video = videos[index];
               return ListTile(
                 leading: Image.network(video.thumbnailUrl),
-                title: Text(video.title),
+                title: Text(
+                  video.title,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
                 subtitle: Text(video.channelTitle),
+                trailing: IconButton(
+                  icon: const Icon(Icons.more_vert),
+                  onPressed: () {
+                    _showSongOptions(context, video);
+                  },
+                ),
                 onTap: () async {
                   try {
                     if (_isPlaying) {
@@ -664,5 +679,204 @@ class SongSearchDelegate extends SearchDelegate<String> {
     // No disponemos del _audioPlayer aquí, ya que lo gestiona HomeScreen
     _audioService.dispose();
     super.dispose();
+  }
+
+  void _showSongOptions(BuildContext context, YouTubeVideo video) {
+    showModalBottomSheet(
+      context: context,
+      builder: (context) {
+        return Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.play_arrow),
+              title: const Text('Reproducir'),
+              onTap: () async {
+                Navigator.pop(context);
+                // Reproducir la canción
+                try {
+                  // Mostrar indicador de carga
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: Text('Cargando audio...')),
+                  );
+                  
+                  final audioUrl = await _audioService.getAudioUrl(video.videoId);
+                  await _audioPlayer.setUrl(audioUrl);
+                  await _audioPlayer.play();
+                  
+                  _isPlaying = true;
+                  onPlayStateChanged(true);
+                  onThumbnailSelected(video.thumbnailUrl);
+                  onSongSelected?.call(video);
+                  
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: Text('Reproduciendo: ${video.title}')),
+                  );
+                } catch (e) {
+                  if (kDebugMode) {
+                    print('Error al reproducir: $e');
+                  }
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: Text('Error al reproducir: $e')),
+                  );
+                }
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.playlist_add),
+              title: const Text('Añadir a una lista'),
+              onTap: () {
+                Navigator.pop(context);
+                _showAddToPlaylistDialog(context, video);
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.favorite),
+              title: Text(
+                PlaylistService.isFavorite(video.videoId)
+                    ? 'Quitar de favoritos'
+                    : 'Añadir a favoritos',
+              ),
+              onTap: () async {
+                Navigator.pop(context);
+                if (PlaylistService.isFavorite(video.videoId)) {
+                  await PlaylistService.removeFavorite(video.videoId);
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: Text('${video.title} quitada de favoritos')),
+                  );
+                } else {
+                  await PlaylistService.addFavorite(video);
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: Text('${video.title} añadida a favoritos')),
+                  );
+                }
+              },
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  void _showAddToPlaylistDialog(BuildContext context, YouTubeVideo video) {
+    final playlists = PlaylistService.getPlaylists();
+    
+    showDialog(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: const Text('Añadir a lista'),
+          content: SizedBox(
+            width: double.maxFinite,
+            height: 300,
+            child: playlists.isEmpty 
+                ? const Center(child: Text('No tienes listas creadas'))
+                : ListView.builder(
+                    shrinkWrap: true,
+                    itemCount: playlists.length,
+                    itemBuilder: (context, index) {
+                      final playlist = playlists[index];
+                      return ListTile(
+                        title: Text(playlist.name),
+                        onTap: () async {
+                          Navigator.pop(context);
+                          await PlaylistService.addSongToPlaylist(playlist.id, video);
+                          
+                          if (context.mounted) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(
+                                content: Text('${video.title} añadida a ${playlist.name}'),
+                              ),
+                            );
+                          }
+                        },
+                      );
+                    },
+                  ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Cancelar'),
+            ),
+            TextButton(
+              onPressed: () {
+                Navigator.pop(context);
+                _showCreatePlaylistDialog(context, video);
+              },
+              child: const Text('Nueva lista'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  void _showCreatePlaylistDialog(BuildContext context, YouTubeVideo video) {
+    final nameController = TextEditingController();
+    final descriptionController = TextEditingController();
+
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Nueva lista'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              controller: nameController,
+              decoration: const InputDecoration(
+                labelText: 'Nombre',
+                hintText: 'Ej: Mis favoritas',
+              ),
+              autofocus: true,
+            ),
+            const SizedBox(height: 8),
+            TextField(
+              controller: descriptionController,
+              decoration: const InputDecoration(
+                labelText: 'Descripción (opcional)',
+                hintText: 'Ej: Canciones para el gimnasio',
+              ),
+              maxLines: 2,
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancelar'),
+          ),
+          TextButton(
+            onPressed: () async {
+              final name = nameController.text.trim();
+              if (name.isNotEmpty) {
+                final description = descriptionController.text.trim().isNotEmpty
+                    ? descriptionController.text.trim()
+                    : null;
+                
+                Navigator.pop(context);
+                
+                final playlist = await PlaylistService.createPlaylist(
+                  name, 
+                  description: description,
+                );
+                
+                await PlaylistService.addSongToPlaylist(playlist.id, video);
+                
+                if (context.mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text('${video.title} añadida a $name'),
+                    ),
+                  );
+                }
+              }
+            },
+            child: const Text('Crear'),
+          ),
+        ],
+      ),
+    );
   }
 }
