@@ -1,9 +1,26 @@
 import 'package:flutter/material.dart';
+import 'package:just_audio_background/just_audio_background.dart';
+import 'package:soundswarm/screen/home_screen.dart';
+import 'package:soundswarm/service/notification_service.dart';
 
-import 'screen/home_screen.dart';
-
-void main() {
-  WidgetsFlutterBinding.ensureInitialized(); // Agregar esta línea
+Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  
+  // Inicializar el servicio de audio en segundo plano con notificación minimizada
+  await JustAudioBackground.init(
+    androidNotificationChannelId: 'com.soundswarm.channel.audio',
+    androidNotificationChannelName: 'SoundSwarm Audio',
+    androidNotificationOngoing: false, // No mostrar como permanente
+    androidShowNotificationBadge: false, // Sin badge
+    androidStopForegroundOnPause: true, // Ocultar cuando se pausa
+    notificationColor: Colors.blue,
+    // La notificación será minimalista por defecto
+    androidNotificationIcon: 'mipmap/ic_launcher', // Usa el icono de la app
+  );
+  
+  // Inicializar nuestro servicio personalizado de notificaciones
+  await NotificationService.initialize();
+  
   runApp(const MyApp());
 }
 

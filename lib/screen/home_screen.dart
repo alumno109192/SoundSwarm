@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:soundswarm/model/youtube_video.dart';
 import 'package:soundswarm/screen/drawer.dart';
 import 'package:soundswarm/service/audio_player_service.dart';
+import 'package:soundswarm/service/notification_service.dart';
 import 'package:soundswarm/service/youtube_api_service.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:soundswarm/service/audio_service.dart';
@@ -11,6 +12,8 @@ import 'package:shared_preferences/shared_preferences.dart';
 // Añadir esta importación
 import 'package:flutter/foundation.dart';
 import 'package:soundswarm/service/playlist_service.dart';
+import 'package:audio_session/audio_session.dart';
+import 'package:just_audio_background/just_audio_background.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -22,7 +25,7 @@ class HomeScreen extends StatefulWidget {
 class _HomeScreenState extends State<HomeScreen> {
   bool _isPlaying = false;
   String? _currentThumbnailUrl;
-  final AudioPlayer _audioPlayer = AudioPlayer();
+  late AudioPlayer _audioPlayer;
   
   // Añadir variables para la canción actual y canciones relacionadas
   YouTubeVideo? _currentSong;
@@ -37,6 +40,13 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   void initState() {
     super.initState();
+    
+    _audioPlayer = AudioPlayer();
+    
+    // Configurar el manejo de audio session para comportamiento correcto
+    AudioSession.instance.then((session) {
+      session.configure(const AudioSessionConfiguration.music());
+    });
     
     // Escuchar cambios en la posición de reproducción
     _audioPlayer.positionStream.listen((position) {
@@ -54,6 +64,47 @@ class _HomeScreenState extends State<HomeScreen> {
 
     // Configurar callback para reproducir canciones desde otras pantallas
     AudioPlayerService().setPlaySongCallback(_playSong);
+
+    // Escuchar cambios en el estado de reproducción
+    _audioPlayer.playerStateStream.listen((state) {
+      if (state.processingState == ProcessingState.completed) {
+        // Auto-reproducir siguiente canción cuando termina
+        if (_relatedSongs.isNotEmpty && _currentSongIndex < _relatedSongs.length - 1) {
+          _playNextSong();
+        }
+      }
+    });
+    
+    // Escuchar cambios en el estado de playing/paused
+    _audioPlayer.playingStream.listen((isPlaying) {
+      setState(() {
+        _isPlaying = isPlaying;
+      });
+    });
+
+    // Configurar callback para el estado de la pantalla
+    NotificationService.onScreenStateChanged = _handleScreenStateChange;
+  }
+
+  void _handleScreenStateChange(bool isLocked) {
+    // Cuando la pantalla se bloquea, asegurarse de que los controles de reproducción estén visibles
+    // incluso si la app estaba en segundo plano
+    if (isLocked && _isPlaying) {
+      // Si estamos reproduciendo y la pantalla se bloquea, asegurarse de que los controles
+      // de reproducción estén visibles en la pantalla de bloqueo
+      _ensureMediaControlsVisible();
+    }
+  }
+
+  void _ensureMediaControlsVisible() {
+    // Este método se asegura de que los controles de reproducción estén visibles
+    // en la pantalla de bloqueo cuando la pantalla se bloquea
+    if (_audioPlayer.playing) {
+      // Esto "refrescará" la notificación para asegurarse de que esté visible
+      // en la pantalla de bloqueo
+      final currentPos = _audioPlayer.position;
+      _audioPlayer.seek(currentPos);
+    }
   }
 
   // Función auxiliar para formatear duración en MM:SS
@@ -281,6 +332,51 @@ class _HomeScreenState extends State<HomeScreen> {
                 ),
               ],
             ),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                // Botón anterior
+                IconButton(
+                  icon: const Icon(Icons.skip_previous, size: 32),
+                  onPressed: _currentSongIndex > 0 ? _playPreviousSong : null,
+                ),
+                
+                // Botón de reproducir/pausar
+                IconButton(
+                  icon: Icon(
+                    _isPlaying ? Icons.pause_circle_filled : Icons.play_circle_filled,
+                    size: 48,
+                  ),
+                  onPressed: _currentSong != null
+                      ? () {
+                          if (_isPlaying) {
+                            _audioPlayer.pause();
+                          } else {
+                            _audioPlayer.play();
+                          }
+                          setState(() {
+                            _isPlaying = !_isPlaying;
+                          });
+                        }
+                      : null,
+                ),
+                
+                // Botón siguiente
+                IconButton(
+                  icon: const Icon(Icons.skip_next, size: 32),
+                  onPressed: _relatedSongs.isNotEmpty && _currentSongIndex < _relatedSongs.length - 1
+                      ? _playNextSong
+                      : null,
+                ),
+                
+                // Nuevo botón de opciones
+                if (_currentSong != null)
+                  IconButton(
+                    icon: const Icon(Icons.more_vert),
+                    onPressed: () => _showCurrentSongOptions(),
+                  ),
+              ],
+            ),
           ],
         ),
       ),
@@ -289,6 +385,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
   @override
   void dispose() {
+    NotificationService.onScreenStateChanged = null;
     _audioPlayer.dispose(); // Liberar recursos al cerrar
     super.dispose();
   }
@@ -355,16 +452,39 @@ class _HomeScreenState extends State<HomeScreen> {
       final audioService = AudioService();
       final audioUrl = await audioService.getAudioUrl(video.videoId);
       
-      // Primero actualizar la interfaz para dar feedback inmediato
+      // Actualizar UI inmediatamente
       setState(() {
         _currentSong = video;
         _currentThumbnailUrl = video.thumbnailUrl;
       });
       
-      await _audioPlayer.setUrl(audioUrl);
+      // Crear MediaItem para la notificación
+      final mediaItem = MediaItem(
+        id: video.videoId,
+        title: video.title,
+        artist: video.channelTitle,
+        artUri: Uri.parse(video.thumbnailUrl),
+        duration: await _audioPlayer.setUrl(audioUrl),
+        // Usar una notificación compacta por defecto, que se expandirá
+        // solo cuando la pantalla esté bloqueada
+        displayDescription: NotificationService.isScreenLocked 
+            ? video.description 
+            : null, // No mostrar descripción en la notificación normal
+        displayTitle: video.title,
+        displaySubtitle: video.channelTitle,
+      );
+      
+      // Reproducir con background playback
+      await _audioPlayer.setAudioSource(
+        AudioSource.uri(
+          Uri.parse(audioUrl),
+          tag: mediaItem,
+        ),
+      );
+      
       await _audioPlayer.play();
       
-      if (!mounted) return; // Usar mounted, no context.mounted, en un State
+      if (!mounted) return;
       
       setState(() {
         _isPlaying = true;
@@ -380,7 +500,7 @@ class _HomeScreenState extends State<HomeScreen> {
         print('Error al reproducir canción: $e');
       }
       
-      if (!mounted) return; // Usar mounted, no context.mounted
+      if (!mounted) return;
       
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Error al reproducir: $e')),
@@ -411,6 +531,230 @@ class _HomeScreenState extends State<HomeScreen> {
     // Decrementar el índice y reproducir la canción previa
     _currentSongIndex--;
     await _playSong(_relatedSongs[_currentSongIndex]);
+  }
+
+  void _showCurrentSongOptions() {
+    if (_currentSong == null) return;
+
+    showModalBottomSheet(
+      context: context,
+      builder: (context) {
+        return Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.playlist_add),
+              title: const Text('Añadir a una lista'),
+              onTap: () {
+                Navigator.pop(context);
+                _showAddToPlaylistDialog(_currentSong!);
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.favorite),
+              title: Text(
+                PlaylistService.isFavorite(_currentSong!.videoId)
+                    ? 'Quitar de favoritos'
+                    : 'Añadir a favoritos',
+              ),
+              onTap: () async {
+                Navigator.pop(context);
+                if (PlaylistService.isFavorite(_currentSong!.videoId)) {
+                  await PlaylistService.removeFavorite(_currentSong!.videoId);
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: Text('${_currentSong!.title} quitada de favoritos')),
+                  );
+                } else {
+                  await PlaylistService.addFavorite(_currentSong!);
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: Text('${_currentSong!.title} añadida a favoritos')),
+                  );
+                }
+              },
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  void _showSongDetailsDialog(YouTubeVideo video) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Detalles de la canción'),
+        content: SingleChildScrollView(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Image.network(video.thumbnailUrl),
+              const SizedBox(height: 16),
+              Text('Título: ${video.title}', 
+                style: const TextStyle(fontWeight: FontWeight.bold)),
+              const SizedBox(height: 8),
+              Text('Canal: ${video.channelTitle}'),
+              const SizedBox(height: 8),
+              Text('ID: ${video.videoId}'),
+              const SizedBox(height: 8),
+              Text('Publicado: ${video.publishedAt}'),
+              const SizedBox(height: 8),
+              const Text('Descripción:', style: TextStyle(fontWeight: FontWeight.bold)),
+              const SizedBox(height: 4),
+              Text(video.description),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cerrar'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showAddToPlaylistDialog(YouTubeVideo video) {
+    final playlists = PlaylistService.getPlaylists();
+    
+    showDialog(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: const Text('Añadir a lista'),
+          content: SizedBox(
+            width: double.maxFinite,
+            height: 300,
+            child: playlists.isEmpty 
+                ? const Center(child: Text('No tienes listas creadas'))
+                : ListView.builder(
+                    shrinkWrap: true,
+                    itemCount: playlists.length,
+                    itemBuilder: (context, index) {
+                      final playlist = playlists[index];
+                      return ListTile(
+                        title: Text(playlist.name),
+                        subtitle: Text(
+                          '${playlist.songs.length} ${playlist.songs.length == 1 ? 'canción' : 'canciones'}',
+                          style: TextStyle(fontSize: 12, color: Colors.grey[400]),
+                        ),
+                        onTap: () async {
+                          Navigator.pop(context);
+                          
+                          // Comprobar si la canción ya está en la lista
+                          bool songExists = playlist.songs.any(
+                            (song) => song.videoId == video.videoId
+                          );
+                          
+                          if (songExists) {
+                            if (!mounted) return;
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(
+                                content: Text('${video.title} ya está en ${playlist.name}'),
+                              ),
+                            );
+                            return;
+                          }
+                          
+                          await PlaylistService.addSongToPlaylist(playlist.id, video);
+                          
+                          if (!mounted) return;
+                          
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: Text('${video.title} añadida a ${playlist.name}'),
+                            ),
+                          );
+                        },
+                      );
+                    },
+                  ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Cancelar'),
+            ),
+            TextButton(
+              onPressed: () {
+                Navigator.pop(context);
+                _showCreatePlaylistDialog(video);
+              },
+              child: const Text('Nueva lista'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  void _showCreatePlaylistDialog(YouTubeVideo video) {
+    final nameController = TextEditingController();
+    final descriptionController = TextEditingController();
+
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Nueva lista'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              controller: nameController,
+              decoration: const InputDecoration(
+                labelText: 'Nombre',
+                hintText: 'Ej: Mis favoritas',
+              ),
+              autofocus: true,
+            ),
+            const SizedBox(height: 8),
+            TextField(
+              controller: descriptionController,
+              decoration: const InputDecoration(
+                labelText: 'Descripción (opcional)',
+                hintText: 'Ej: Canciones para el gimnasio',
+              ),
+              maxLines: 2,
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancelar'),
+          ),
+          TextButton(
+            onPressed: () async {
+              final name = nameController.text.trim();
+              if (name.isNotEmpty) {
+                final description = descriptionController.text.trim().isNotEmpty
+                    ? descriptionController.text.trim()
+                    : null;
+                
+                Navigator.pop(context);
+                
+                final playlist = await PlaylistService.createPlaylist(
+                  name, 
+                  description: description,
+                );
+                
+                await PlaylistService.addSongToPlaylist(playlist.id, video);
+                
+                if (!mounted) return;
+                
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text('${video.title} añadida a $name'),
+                  ),
+                );
+              }
+            },
+            child: const Text('Crear'),
+          ),
+        ],
+      ),
+    );
   }
 }
 
