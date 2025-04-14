@@ -79,22 +79,6 @@ class YouTubeApiService {
     }
   }
 
-  // Método para búsqueda alternativa cuando falla la API de videos relacionados
-  Future<List<YouTubeVideo>> _fallbackSearch(String? title, String? artist) async {
-    try {
-      final searchQuery = _buildSearchQuery(title, artist);
-      print('Buscando videos similares con: "$searchQuery"');
-      
-      if (searchQuery.isNotEmpty) {
-        return await searchVideos(searchQuery);
-      } else {
-        return await searchVideos("música popular");
-      }
-    } catch (e) {
-      print('Error en fallback search: $e');
-      return [];
-    }
-  }
 
   // Método auxiliar para construir una consulta segura
   String _buildSearchQuery(String? title, String? artist) {
