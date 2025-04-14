@@ -39,6 +39,8 @@ dependencies:
   just_audio: ^0.9.46
   youtube_explode_dart: ^2.4.0
   shared_preferences: ^2.5.3
+  google_sign_in: ^6.3.0
+  googleapis: ^14.0.0
 
 dev_dependencies:
   flutter_test:

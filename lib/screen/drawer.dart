@@ -1,11 +1,22 @@
 import 'package:flutter/material.dart';
 import 'package:soundswarm/screen/setting_screen.dart';
+import 'package:soundswarm/service/auth_service.dart';
 
-class AppDrawer extends StatelessWidget {
+class AppDrawer extends StatefulWidget {
   const AppDrawer({super.key});
 
   @override
+  State<AppDrawer> createState() => _AppDrawerState();
+}
+
+class _AppDrawerState extends State<AppDrawer> {
+  bool _isLoading = false;
+
+  @override
   Widget build(BuildContext context) {
+    final isLoggedIn = AuthService.isSignedIn();
+    final currentUser = AuthService.currentUser;
+
     return Drawer(
       child: ListView(
         padding: EdgeInsets.zero,
@@ -16,23 +27,107 @@ class AppDrawer extends StatelessWidget {
             ),
             child: Stack(
               children: [
-                // Contenido actual del header
-                const Column(
+                Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   mainAxisAlignment: MainAxisAlignment.end,
                   children: [
-                    CircleAvatar(
-                      backgroundColor: Colors.white,
-                      child: Icon(Icons.person),
+                    Row(
+                      children: [
+                        // Avatar del usuario (mostrar foto de perfil si está conectado)
+                        CircleAvatar(
+                          backgroundColor: Colors.white,
+                          backgroundImage: isLoggedIn && currentUser?.photoUrl != null
+                              ? NetworkImage(currentUser!.photoUrl!)
+                              : null,
+                          child: isLoggedIn && currentUser?.photoUrl != null
+                              ? null
+                              : const Icon(Icons.person),
+                        ),
+                        const SizedBox(width: 10),
+                        
+                        // Botón de login/logout de YouTube
+                        _isLoading
+                            ? const CircularProgressIndicator()
+                            : ElevatedButton.icon(
+                                icon: isLoggedIn
+                                    ? const Icon(Icons.logout, color: Colors.red)
+                                    : Image.asset(
+                                        'assets/youtube_logo.png',
+                                        width: 20,
+                                        height: 20,
+                                        errorBuilder: (context, error, stackTrace) =>
+                                            const Icon(Icons.play_circle_filled, color: Colors.red),
+                                      ),
+                                label: Text(
+                                  isLoggedIn ? 'Logout' : 'Login con YouTube',
+                                ),
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: Colors.white,
+                                  foregroundColor: Colors.red,
+                                  textStyle: const TextStyle(fontWeight: FontWeight.bold),
+                                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                ),
+                                onPressed: () async {
+                                  setState(() {
+                                    _isLoading = true;
+                                  });
+
+                                  try {
+                                    if (isLoggedIn) {
+                                      // Cerrar sesión
+                                      await AuthService.signOut();
+                                      ScaffoldMessenger.of(context).showSnackBar(
+                                        const SnackBar(content: Text('Sesión cerrada')),
+                                      );
+                                    } else {
+                                      // Iniciar sesión
+                                      final account = await AuthService.signIn();
+                                      if (account != null) {
+                                        ScaffoldMessenger.of(context).showSnackBar(
+                                          SnackBar(
+                                            content: Text('Bienvenido, ${account.displayName}'),
+                                          ),
+                                        );
+                                      } else {
+                                        ScaffoldMessenger.of(context).showSnackBar(
+                                          const SnackBar(
+                                            content: Text('Login cancelado'),
+                                          ),
+                                        );
+                                      }
+                                    }
+                                  } catch (e) {
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      SnackBar(content: Text('Error: $e')),
+                                    );
+                                  } finally {
+                                    setState(() {
+                                      _isLoading = false;
+                                    });
+                                  }
+                                },
+                              ),
+                      ],
                     ),
-                    SizedBox(height: 10),
+                    const SizedBox(height: 10),
+                    // Mostrar el nombre del usuario si está conectado
                     Text(
-                      'SoundSwarm',
-                      style: TextStyle(
+                      isLoggedIn && currentUser != null
+                          ? currentUser.displayName ?? 'Usuario de YouTube'
+                          : 'SoundSwarm',
+                      style: const TextStyle(
                         color: Colors.white,
-                        fontSize: 24,
+                        fontSize: 18,
                       ),
                     ),
+                    if (isLoggedIn && currentUser?.email != null)
+                      Text(
+                        currentUser!.email,
+                        style: const TextStyle(
+                          color: Colors.white70,
+                          fontSize: 12,
+                        ),
+                      ),
                   ],
                 ),
                 // Botón de cierre en la esquina superior derecha
