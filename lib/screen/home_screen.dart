@@ -5,6 +5,7 @@ import 'package:soundswarm/screen/setting_screen.dart';
 import 'package:soundswarm/service/youtube_api_service.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:soundswarm/service/audio_service.dart';
+import 'dart:math';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -15,7 +16,39 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   bool _isPlaying = false;
-  String? _currentThumbnailUrl; // URL de la miniatura actual
+  String? _currentThumbnailUrl;
+  final AudioPlayer _audioPlayer = AudioPlayer();
+  
+  // Nuevas variables para el slider
+  Duration _position = Duration.zero;
+  Duration _duration = Duration.zero;
+  
+  @override
+  void initState() {
+    super.initState();
+    
+    // Escuchar cambios en la posición de reproducción
+    _audioPlayer.positionStream.listen((position) {
+      setState(() {
+        _position = position;
+      });
+    });
+    
+    // Escuchar cambios en la duración total
+    _audioPlayer.durationStream.listen((duration) {
+      setState(() {
+        _duration = duration ?? Duration.zero;
+      });
+    });
+  }
+
+  // Función auxiliar para formatear duración en MM:SS
+  String _formatDuration(Duration duration) {
+    String twoDigits(int n) => n.toString().padLeft(2, '0');
+    final minutes = twoDigits(duration.inMinutes.remainder(60));
+    final seconds = twoDigits(duration.inSeconds.remainder(60));
+    return "$minutes:$seconds";
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -40,6 +73,7 @@ class _HomeScreenState extends State<HomeScreen> {
                       _isPlaying = isPlaying; // Actualizar el estado de reproducción
                     });
                   },
+                  audioPlayer: _audioPlayer, // Pasar el reproductor compartido
                 ),
               );
             },
@@ -147,6 +181,14 @@ class _HomeScreenState extends State<HomeScreen> {
                     size: 50,
                   ),
                   onPressed: () {
+                    if (_isPlaying) {
+                      // Si está reproduciendo, pausar
+                      _audioPlayer.pause();
+                    } else if (_currentThumbnailUrl != null) {
+                      // Si hay una canción cargada, reanudar reproducción
+                      _audioPlayer.play();
+                    }
+                    
                     setState(() {
                       _isPlaying = !_isPlaying;
                     });
@@ -159,29 +201,101 @@ class _HomeScreenState extends State<HomeScreen> {
               ],
             ),
             const SizedBox(height: 20),
-            Slider(
-              value: 0.3,
-              onChanged: (value) {},
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                // Tiempo actual con estilo mejorado
+                Container(
+                  width: 45,
+                  child: Text(
+                    _formatDuration(_position),
+                    style: const TextStyle(
+                      fontWeight: FontWeight.bold,
+                      fontSize: 12,
+                    ),
+                  ),
+                ),
+                // Slider mejorado
+                Expanded(
+                  child: SliderTheme(
+                    data: SliderTheme.of(context).copyWith(
+                      activeTrackColor: Colors.blue[700],
+                      inactiveTrackColor: Colors.grey[300],
+                      thumbColor: Colors.blue,
+                      thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 8.0),
+                      overlayShape: const RoundSliderOverlayShape(overlayRadius: 14.0),
+                      // Añadir marcas de tiempo en el slider
+                      tickMarkShape: const RoundSliderTickMarkShape(),
+                      showValueIndicator: ShowValueIndicator.always,
+                    ),
+                    child: Slider(
+                      min: 0,
+                      max: _duration.inSeconds.toDouble() > 0 ? _duration.inSeconds.toDouble() : 1.0,
+                      value: min(_position.inSeconds.toDouble(), _duration.inSeconds.toDouble()),
+                      // Añadir etiqueta que muestra el tiempo al arrastrar
+                      label: _formatDuration(Duration(seconds: _position.inSeconds)),
+                      onChanged: (value) {
+                        setState(() {
+                          _position = Duration(seconds: value.toInt());
+                        });
+                      },
+                      onChangeEnd: (value) async {
+                        try {
+                          final position = Duration(seconds: value.toInt());
+                          await _audioPlayer.seek(position);
+                          
+                          if (!_isPlaying && _currentThumbnailUrl != null) {
+                            await _audioPlayer.play();
+                            setState(() {
+                              _isPlaying = true;
+                            });
+                          }
+                        } catch (e) {
+                          print('Error al buscar posición: $e');
+                        }
+                      },
+                    ),
+                  ),
+                ),
+                // Duración total con estilo mejorado
+                Container(
+                  width: 45,
+                  child: Text(
+                    _formatDuration(_duration),
+                    style: const TextStyle(
+                      fontWeight: FontWeight.bold,
+                      fontSize: 12,
+                    ),
+                  ),
+                ),
+              ],
             ),
           ],
         ),
       ),
     );
   }
+
+  @override
+  void dispose() {
+    _audioPlayer.dispose(); // Liberar recursos al cerrar
+    super.dispose();
+  }
 }
 
 class SongSearchDelegate extends SearchDelegate<String> {
   final YouTubeApiService _apiService = YouTubeApiService();
   final AudioService _audioService = AudioService();
-  final AudioPlayer _audioPlayer = AudioPlayer();
-  final Function(String) onThumbnailSelected; // Callback para actualizar la carátula
-  final Function(bool) onPlayStateChanged; // Callback para actualizar el estado de reproducción
+  final AudioPlayer _audioPlayer; // Ya no inicializamos aquí, lo recibimos
+  final Function(String) onThumbnailSelected;
+  final Function(bool) onPlayStateChanged;
   bool _isPlaying = false;
 
   SongSearchDelegate({
     required this.onThumbnailSelected,
     required this.onPlayStateChanged,
-  });
+    required AudioPlayer audioPlayer, // Recibir el reproductor compartido
+  }): _audioPlayer = audioPlayer;
 
   @override
   List<Widget>? buildActions(BuildContext context) {
@@ -232,40 +346,77 @@ class SongSearchDelegate extends SearchDelegate<String> {
                       // Pausar la reproducción
                       await _audioPlayer.pause().then((_) {
                         _isPlaying = false;
-                        onPlayStateChanged(false); // Actualizar el estado en el reproductor principal
+                        onPlayStateChanged(false);
                       });
+                      
                       if (context.mounted) {
                         ScaffoldMessenger.of(context).showSnackBar(
                           SnackBar(content: Text('Pausado: ${video.title}')),
                         );
                       }
                     } else {
-                      // Reanudar o iniciar la reproducción
-                      final audioUrl = await _audioService.getAudioUrl(video.videoId);
-                      await _audioPlayer.setUrl(audioUrl);
-                      await _audioPlayer.play().then((_) {
-                        _isPlaying = true;
-                        onPlayStateChanged(true); // Actualizar el estado en el reproductor principal
-
-                        // Actualizar la carátula con la miniatura seleccionada
-                        onThumbnailSelected(video.thumbnailUrl);
-                      });
-
+                      // Mostrar indicador de carga
                       if (context.mounted) {
                         ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(content: Text('Reproduciendo: ${video.title}')),
+                          SnackBar(content: Text('Cargando audio...')),
                         );
                       }
-
-                      // Cerrar el buscador y volver al reproductor
-                      if (context.mounted) {
-                        Navigator.pop(context);
+                      
+                      // Reanudar o iniciar la reproducción
+                      final audioUrl = await _audioService.getAudioUrl(video.videoId);
+                      
+                      // Debugging
+                      print('URL de audio: $audioUrl');
+                      
+                      // Verificar que la URL sea válida
+                      if (audioUrl.isEmpty) {
+                        throw Exception('No se pudo obtener la URL del audio');
+                      }
+                      
+                      // Configurar el reproductor con manejadores de errores
+                      try {
+                        await _audioPlayer.setUrl(audioUrl);
+                      } catch (e) {
+                        print('Error al configurar URL: $e');
+                        throw Exception('Error al configurar reproductor: $e');
+                      }
+                      
+                      // Esperar a que la duración esté disponible
+                      try {
+                        final duration = await _audioPlayer.durationStream.first;
+                        print('Duración de la canción: ${duration?.inSeconds ?? 0} segundos');
+                      } catch (e) {
+                        print('Error al obtener duración: $e');
+                        // Continuar a pesar del error de duración
+                      }
+                      
+                      // Intentar reproducir
+                      try {
+                        await _audioPlayer.play();
+                        _isPlaying = true;
+                        onPlayStateChanged(true);
+                        onThumbnailSelected(video.thumbnailUrl);
+                        
+                        if (context.mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(content: Text('Reproduciendo: ${video.title}')),
+                          );
+                          
+                          Navigator.pop(context);
+                        }
+                      } catch (e) {
+                        print('Error específico al reproducir: $e');
+                        throw Exception('Error al iniciar reproducción: $e');
                       }
                     }
                   } catch (e) {
+                    print('Error detallado: $e');
                     if (context.mounted) {
                       ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(content: Text('Error al reproducir audio: $e')),
+                        SnackBar(
+                          content: Text('Error al reproducir audio: $e'),
+                          duration: const Duration(seconds: 5),
+                        ),
                       );
                     }
                   }
@@ -287,8 +438,8 @@ class SongSearchDelegate extends SearchDelegate<String> {
 
   @override
   void dispose() {
-    _audioPlayer.dispose();
-    _audioService.dispose(); // Cierra la instancia de AudioService
+    // No disponemos del _audioPlayer aquí, ya que lo gestiona HomeScreen
+    _audioService.dispose();
     super.dispose();
   }
 }

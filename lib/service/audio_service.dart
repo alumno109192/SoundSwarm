@@ -5,12 +5,34 @@ class AudioService {
 
   Future<String> getAudioUrl(String videoId) async {
     try {
-      // Obtener el manifiesto de streams del video
-      final manifest = await _youtubeExplode.videos.streamsClient.getManifest(videoId);
-      final audioStream = manifest.audioOnly.withHighestBitrate();
-      return audioStream.url.toString();
+      print('Obteniendo URL para video ID: $videoId');
+      
+      // Obtener el manifiesto de streams
+      final StreamManifest manifest = await _youtubeExplode.videos.streams.getManifest(videoId);
+      
+      // Filtrar para obtener solo streams de audio y ordenarlos por calidad
+      final audioStreams = manifest.audioOnly.sortByBitrate();
+      
+      if (audioStreams.isEmpty) {
+        print('No se encontraron streams de audio');
+        throw Exception('No se encontraron streams de audio para este video');
+      }
+      
+      // Obtener el stream de mayor calidad
+      final audioStream = audioStreams.last;
+      final url = audioStream.url.toString();
+      
+      print('URL obtenida: $url');
+      
+      // Verificar que la URL sea válida
+      if (url.isEmpty) {
+        throw Exception('URL de audio vacía');
+      }
+      
+      return url;
     } catch (e) {
-      throw Exception('Error al obtener el enlace de audio: $e');
+      print('Error en AudioService.getAudioUrl: $e');
+      throw Exception('No se pudo obtener el audio: $e');
     }
   }
 
