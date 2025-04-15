@@ -6,21 +6,32 @@ class NotificationService {
   static final Screen _screen = Screen();
   static StreamSubscription<ScreenStateEvent>? _screenSubscription;
   static bool _isScreenLocked = false;
+  static bool _initialized = false;
 
   // Callback que se llamará cuando cambie el estado de la pantalla
   static Function(bool isLocked)? onScreenStateChanged;
 
   static Future<void> initialize() async {
     try {
+      // Verificar si el servicio ya está inicializado
+      if (_initialized) return;
+      
       // Solicitar permisos (solo necesario en algunas versiones de Android)
-      // Nota: requestPermission no está definido para Screen. Verifique si se necesita un método alternativo o elimine esta línea si no es necesario.
+      // requestPermission method is not defined for Screen, removing this call
       
       // Suscribirse a cambios de estado de pantalla
-      _screenSubscription = _screen.screenStateStream.listen(_onScreenStateEvent);
+      _screenSubscription = _screen.screenStateStream?.listen(_onScreenStateEvent);
+      
+      _initialized = true;
+      
+      if (kDebugMode) {
+        print('NotificationService inicializado correctamente');
+      }
     } catch (e) {
       if (kDebugMode) {
         print('Error al inicializar detector de pantalla: $e');
       }
+      // No lanzar la excepción, simplemente registrarla
     }
   }
 
