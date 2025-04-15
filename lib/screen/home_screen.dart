@@ -14,10 +14,31 @@ import 'package:audio_session/audio_session.dart';
 import 'package:just_audio_background/just_audio_background.dart';
 
 class HomeScreen extends StatefulWidget {
-  const HomeScreen({super.key});
+  // GlobalKey para acceder a la instancia desde cualquier lugar
+  static final GlobalKey<_HomeScreenState> homeScreenKey = GlobalKey<_HomeScreenState>();
+  
+  const HomeScreen({super.key});  // Eliminar el valor por defecto
 
   @override
   State<HomeScreen> createState() => _HomeScreenState();
+  
+  // Método estático para reproducir canciones desde cualquier parte de la app
+  static void playSong(BuildContext context, YouTubeVideo video) {
+    final state = homeScreenKey.currentState;
+    if (state != null) {
+      state._playSong(video);
+    } else {
+      // Si no podemos obtener el state, navegar a HomeScreen
+      Navigator.pushAndRemoveUntil(
+        context,
+        MaterialPageRoute(builder: (context) => HomeScreen(key: HomeScreen.homeScreenKey)),
+        (route) => false,
+      ).then((_) {
+        // Intentar reproducir después de que HomeScreen esté cargada
+        homeScreenKey.currentState?._playSong(video);
+      });
+    }
+  }
 }
 
 class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
