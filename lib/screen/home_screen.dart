@@ -39,14 +39,16 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    // Inicialización básica
+    
+    // Inicialización del reproductor
     _audioPlayer = AudioPlayer();
     
-    // Inicialización asíncrona diferida
-    Future.delayed(const Duration(milliseconds: 500), () {
-      _initializeAudioServices();
-      _loadSearchHistory();
-    });
+    // IMPORTANTE: configurar los listeners inmediatamente
+    _setupAudioPlayerListeners();
+    
+    // Resto de inicialización
+    _loadSearchHistory();
+    _initializeAudioServices();
   }
 
   Future<void> _loadSearchHistory() async {
@@ -79,24 +81,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   Future<void> _initializeAudioServices() async {
     try {
       final session = await AudioSession.instance;
-      // Configuración más robusta para transiciones suaves
-      await session.configure(const AudioSessionConfiguration(
-        avAudioSessionCategory: AVAudioSessionCategory.playback,
-        avAudioSessionCategoryOptions: AVAudioSessionCategoryOptions.duckOthers,
-        avAudioSessionMode: AVAudioSessionMode.defaultMode,
-        avAudioSessionRouteSharingPolicy: AVAudioSessionRouteSharingPolicy.defaultPolicy,
-        avAudioSessionSetActiveOptions: AVAudioSessionSetActiveOptions.none,
-        androidAudioAttributes: AndroidAudioAttributes(
-          contentType: AndroidAudioContentType.music,
-          flags: AndroidAudioFlags.none,
-          usage: AndroidAudioUsage.media,
-        ),
-        androidAudioFocusGainType: AndroidAudioFocusGainType.gain,
-        androidWillPauseWhenDucked: true,
-      ));
-      
-      // Configurar los listeners del reproductor
-      _setupAudioPlayerListeners();
+      // Usar una configuración más simple para evitar el error OSStatus -50
+      await session.configure(const AudioSessionConfiguration.music());
       
       if (kDebugMode) {
         print('Servicios de audio inicializados correctamente');
@@ -109,7 +95,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   }
 
   void _setupAudioPlayerListeners() {
-    // Listeners básicos
+    // Asegurarse de que no hay listeners duplicados
     _audioPlayer.playerStateStream.listen((state) {
       if (state.processingState == ProcessingState.completed) {
         // Manejar fin de reproducción
@@ -117,74 +103,37 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           _playNextSong();
         }
       }
+      
+      // Actualizar UI siempre que cambie el estado
+      setState(() {});
     });
     
-    // Escuchar cambios en la posición de reproducción
+    // IMPORTANTE: Asegurar que positionStream y durationStream actualizan la UI
     _audioPlayer.positionStream.listen((position) {
       setState(() {
         _position = position;
       });
     });
     
-    // Escuchar cambios en la duración total
     _audioPlayer.durationStream.listen((duration) {
       setState(() {
-        _duration = duration ?? Duration.zero;
+        // Aquí está el problema: la duración reportada es el doble de la real
+        // En lugar de dividir en varios lugares, corregirla aquí
+        _duration = duration != null 
+            ? Duration(seconds: (duration.inSeconds / 2).round()) 
+            : Duration.zero;
       });
-    });
-
-    // Configurar callback para reproducir canciones desde otras pantallas
-    AudioPlayerService().setPlaySongCallback(_playSong);
-
-    // Escuchar cambios en el estado de reproducción
-    _audioPlayer.playerStateStream.listen((state) {
-      if (state.processingState == ProcessingState.completed) {
-        // Auto-reproducir siguiente canción cuando termina
-        if (_relatedSongs.isNotEmpty && _currentSongIndex < _relatedSongs.length - 1) {
-          _playNextSong();
-        }
+      // Agregar este código para depurar tiempos (puedes quitarlo después)
+      if (kDebugMode && _duration.inSeconds > 0) {
+        print('Duración raw: ${duration?.inSeconds}, Corregida: ${_duration.inSeconds}');
+        print('Posición: ${_position.inSeconds}/${_duration.inSeconds}');
       }
     });
     
-    // Escuchar cambios en el estado de playing/paused
+    // Listener crucial para isPlaying
     _audioPlayer.playingStream.listen((isPlaying) {
       setState(() {
         _isPlaying = isPlaying;
-      });
-    });
-
-    // Configurar callback para el estado de la pantalla
-    NotificationService.onScreenStateChanged = _handleScreenStateChange;
-
-    // Verificar si hay alguna canción actualmente en reproducción
-    _audioPlayer.playerStateStream.listen((state) {
-      if (state.playing) {
-        setState(() {
-          _isPlaying = true;
-        });
-      }
-    });
-    
-    // Comprobar si hay un problema con la canción actual
-    Future.delayed(const Duration(seconds: 1), () {
-      if (_currentSong == null && _audioPlayer.playing) {
-        setState(() {
-          _currentSong = YouTubeVideo(
-            videoId: 'unknown',
-            title: 'Canción actual',
-            description: '',
-            thumbnailUrl: '',
-            channelTitle: 'Desconocido',
-            publishedAt: '',
-          );
-        });
-      }
-    });
-
-    // Agregar un listener para actualizar UI cuando cambie el estado del reproductor
-    _audioPlayer.playerStateStream.listen((state) {
-      setState(() {
-        // Forzar actualización de UI cuando cambia el estado del reproductor
       });
     });
   }
@@ -201,13 +150,16 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
 
   // Modificar este método para evitar el corte de audio
   void _ensureMediaControlsVisible() {
-    // No usar seek para refrescar la notificación, esto causa el corte
-    // En su lugar, vamos a usar una técnica más suave
-
     if (_audioPlayer.playing) {
-      // Método alternativo: Simplemente asegurar que el servicio en segundo plano siga activo
-      // No es necesario hacer nada aquí, just_audio_background maneja esto automáticamente
-      // cuando hay reproducción activa
+      try {
+        if (kDebugMode) {
+          print('Manteniendo reproducción activa en segundo plano');
+        }
+      } catch (e) {
+        if (kDebugMode) {
+          print('Error al asegurar visibilidad de controles: $e');
+        }
+      }
     }
   }
 
@@ -223,7 +175,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Music P2P'),
+        title: const Text('SonicSwap'),
         systemOverlayStyle: SystemUiOverlayStyle.light,
         actions: [
           IconButton(
@@ -392,8 +344,10 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                           ),
                           child: Slider(
                             min: 0,
-                            max: _duration.inSeconds.toDouble() / 2, // Dividir la duración máxima entre 2
-                            value: min(_position.inSeconds.toDouble(), _duration.inSeconds.toDouble() / 2),
+                            // No dividir aquí, ya lo hiciste en el listener
+                            max: _duration.inSeconds.toDouble(),
+                            // No dividir aquí tampoco
+                            value: min(_position.inSeconds.toDouble(), _duration.inSeconds.toDouble()),
                             label: _formatDuration(Duration(seconds: _position.inSeconds)),
                             onChanged: (value) {
                               setState(() {
@@ -424,7 +378,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                       SizedBox(
                         width: 45,
                         child: Text(
-                          _formatDuration(Duration(seconds: (_duration.inSeconds / 2).round())), // Dividir entre 2
+                          // No dividir aquí, ya lo corregimos en el listener
+                          _formatDuration(_duration),
                           style: const TextStyle(
                             fontWeight: FontWeight.bold,
                             fontSize: 12,
@@ -463,10 +418,14 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                         onPressed: () {
                           if (_isPlaying) {
                             _audioPlayer.pause();
-                            _isPlaying = false;
+                            setState(() {
+                              _isPlaying = false;
+                            });
                           } else if (_currentSong != null) {
                             _audioPlayer.play();
-                            _isPlaying = true;
+                            setState(() {
+                              _isPlaying = true;
+                            });
                           } else {
                             ScaffoldMessenger.of(context).showSnackBar(
                               const SnackBar(content: Text('Por favor, busca y selecciona una canción primero')),
@@ -561,67 +520,47 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
 Future<void> _playSong(YouTubeVideo video) async {
   try {
     final audioService = AudioService();
-    final audioUrl = await audioService.getAudioUrl(video.videoId);
     
-    // Asegurar que el thumbnail se establezca antes de reproducir
-    String thumbnailUrl = video.thumbnailUrl;
+    // IMPORTANTE: Actualizar el estado ANTES de iniciar la carga de audio
     setState(() {
       _currentSong = video;
-      _currentThumbnailUrl = thumbnailUrl;
+      _currentThumbnailUrl = video.thumbnailUrl;
     });
     
-    // Variable importada de main.dart
-    if (isJustAudioBackgroundInitialized) {
-      try {
-        // Usar just_audio_background si está disponible
-        final mediaItem = MediaItem(
-          id: video.videoId,
-          title: video.title,
-          artist: video.channelTitle,
-          artUri: Uri.parse(video.thumbnailUrl),
-          displayTitle: video.title,
-          displaySubtitle: video.channelTitle,
-          displayDescription: video.description,
-        );
-        
-        await _audioPlayer.setAudioSource(
-          AudioSource.uri(
-            Uri.parse(audioUrl),
-            tag: mediaItem,
-          ),
-        );
-      } catch (backgroundError) {
-        if (kDebugMode) {
-          print('Error al usar JustAudioBackground: $backgroundError');
-          print('Cayendo de vuelta a reproducción básica');
-        }
-        
-        await _audioPlayer.setUrl(audioUrl);
+    // Obtener URL del audio
+    final audioUrl = await audioService.getAudioUrl(video.videoId);
+    
+    // Reproducir
+    try {
+      final mediaItem = MediaItem(
+        id: video.videoId,
+        title: video.title,
+        artist: video.channelTitle,
+        artUri: Uri.parse(video.thumbnailUrl),
+        displayTitle: video.title,
+        displaySubtitle: video.channelTitle,
+      );
+      
+      await _audioPlayer.setAudioSource(
+        AudioSource.uri(
+          Uri.parse(audioUrl),
+          tag: mediaItem,
+        ),
+      );
+    } catch (e) {
+      if (kDebugMode) {
+        print('Error con background playback: $e');
       }
-    } else {
-      // Usar reproducción simple si background no está disponible
       await _audioPlayer.setUrl(audioUrl);
     }
     
     await _audioPlayer.play();
     
-    if (!mounted) return;
-    
-    setState(() {
-      _isPlaying = true;
-    });
-    
-    // Cargar canciones relacionadas
-    _loadRelatedSongs(video.videoId);
-    
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('Reproduciendo: ${video.title}')),
-    );
-    
+    // Limpiar recursos
     audioService.dispose();
   } catch (e) {
     if (kDebugMode) {
-      print('Error al reproducir canción: $e');
+      print('Error al reproducir: $e');
     }
     
     if (!mounted) return;
@@ -966,6 +905,10 @@ class SongSearchDelegate extends SearchDelegate<String> {
                 ),
                 onTap: () async {
                   try {
+                    // Actualizar la UI ANTES de iniciar la carga del audio
+                    onThumbnailSelected(video.thumbnailUrl);
+                    onSongSelected?.call(video);
+                    
                     // Mostrar indicador de carga
                     if (context.mounted) {
                       ScaffoldMessenger.of(context).showSnackBar(
@@ -976,33 +919,28 @@ class SongSearchDelegate extends SearchDelegate<String> {
                     // Obtener URL del audio
                     final audioUrl = await _audioService.getAudioUrl(video.videoId);
                     
-                    // Variable importada de main.dart
-                    if (isJustAudioBackgroundInitialized) {
-                      try {
-                        // Intentar usar setAudioSource con MediaItem
-                        final mediaItem = MediaItem(
-                          id: video.videoId,
-                          title: video.title,
-                          artist: video.channelTitle,
-                          artUri: Uri.parse(video.thumbnailUrl),
-                          displayTitle: video.title,
-                          displaySubtitle: video.channelTitle,
-                        );
-                        
-                        await _audioPlayer.setAudioSource(
-                          AudioSource.uri(
-                            Uri.parse(audioUrl),
-                            tag: mediaItem,
-                          ),
-                        );
-                      } catch (backgroundError) {
-                        if (kDebugMode) {
-                          print('Error con AudioHandler, usando método alternativo: $backgroundError');
-                        }
-                        await _audioPlayer.setUrl(audioUrl);
+                    // Intentar usar reproducción con background
+                    try {
+                      final mediaItem = MediaItem(
+                        id: video.videoId,
+                        title: video.title,
+                        artist: video.channelTitle,
+                        artUri: Uri.parse(video.thumbnailUrl),
+                        displayTitle: video.title,
+                        displaySubtitle: video.channelTitle,
+                      );
+                      
+                      await _audioPlayer.setAudioSource(
+                        AudioSource.uri(
+                          Uri.parse(audioUrl),
+                          tag: mediaItem,
+                        ),
+                      );
+                    } catch (e) {
+                      // Si falla, usar reproducción simple
+                      if (kDebugMode) {
+                        print('Fallback a reproducción simple: $e');
                       }
-                    } else {
-                      // Usar método simple
                       await _audioPlayer.setUrl(audioUrl);
                     }
                     
@@ -1011,16 +949,14 @@ class SongSearchDelegate extends SearchDelegate<String> {
                     
                     // Actualizar estado
                     onPlayStateChanged(true);
-                    onThumbnailSelected(video.thumbnailUrl);
-                    onSongSelected?.call(video);
                     
                     if (context.mounted) {
+                      // Cerrar la búsqueda ANTES del SnackBar
+                      Navigator.pop(context);
+                      
                       ScaffoldMessenger.of(context).showSnackBar(
                         SnackBar(content: Text('Reproduciendo: ${video.title}')),
                       );
-                      
-                      // Cerrar la búsqueda
-                      Navigator.pop(context);
                     }
                   } catch (e) {
                     if (kDebugMode) {
