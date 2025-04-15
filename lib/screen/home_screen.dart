@@ -268,47 +268,66 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
                       // Portada del álbum
-                      Container(
-                        width: 200,
-                        height: 200,
-                        decoration: BoxDecoration(
-                          color: Colors.grey[800],
-                          borderRadius: BorderRadius.circular(10),
-                          image: _currentThumbnailUrl != null && _currentThumbnailUrl!.isNotEmpty
-                              ? DecorationImage(
-                                  image: NetworkImage(_currentThumbnailUrl!), 
-                                  fit: BoxFit.cover,
-                                  // Forzar recarga de la imagen
-                                  onError: (exception, stackTrace) {
-                                    if (kDebugMode) {
-                                      print('Error al cargar imagen: $exception');
-                                    }
-                                  },
-                                )
-                              : null,
-                        ),
-                        // Agregar key para forzar reconstrucción cuando cambia _currentThumbnailUrl
-                        key: ValueKey(_currentThumbnailUrl),
-                        child: _currentThumbnailUrl == null || _currentThumbnailUrl!.isEmpty
-                            ? const Icon(Icons.music_note, size: 50, color: Colors.white)
-                            : null,
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          // Carátula
+                          Container(
+                            width: 200,
+                            height: 200,
+                            decoration: BoxDecoration(
+                              color: Colors.grey[800],
+                              borderRadius: BorderRadius.circular(10),
+                              image: _currentThumbnailUrl != null && _currentThumbnailUrl!.isNotEmpty
+                                  ? DecorationImage(
+                                      image: NetworkImage(_currentThumbnailUrl!), 
+                                      fit: BoxFit.cover,
+                                      onError: (exception, stackTrace) {
+                                        if (kDebugMode) {
+                                          print('Error al cargar imagen: $exception');
+                                        }
+                                      },
+                                    )
+                                  : null,
+                            ),
+                            key: ValueKey(_currentThumbnailUrl),
+                            child: _currentThumbnailUrl == null || _currentThumbnailUrl!.isEmpty
+                                ? const Icon(Icons.music_note, size: 50, color: Colors.white)
+                                : null,
+                          ),
+                        ],
                       ),
                       const SizedBox(height: 10),
                       
-                      // Información de la canción
+                      // Información de la canción con botón de opciones
                       if (_currentSong != null)
-                        Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 20),
-                          child: Text(
-                            _currentSong!.title,
-                            style: const TextStyle(
-                              fontWeight: FontWeight.bold,
-                              fontSize: 16,
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Expanded(
+                              child: Padding(
+                                padding: const EdgeInsets.symmetric(horizontal: 20),
+                                child: Text(
+                                  _currentSong!.title,
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 16,
+                                  ),
+                                  textAlign: TextAlign.center,
+                                  maxLines: 2,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
                             ),
-                            textAlign: TextAlign.center,
-                            maxLines: 2,
-                            overflow: TextOverflow.ellipsis,
-                          ),
+                            
+                            // Botón de opciones junto al título
+                            IconButton(
+                              icon: const Icon(Icons.more_vert),
+                              onPressed: () {
+                                _showCurrentSongOptions();
+                              },
+                            ),
+                          ],
                         ),
                       if (_currentSong != null)
                         Padding(
@@ -469,14 +488,6 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                             _loadRelatedSongs(_currentSong!.videoId);
                           }
                         } : null,
-                      ),
-                      
-                      // Botón de opciones - ahora siempre visible
-                      IconButton(
-                        icon: const Icon(Icons.more_vert),
-                        onPressed: () {
-                          _showCurrentSongOptions();
-                        },
                       ),
                     ],
                   ),
