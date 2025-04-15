@@ -123,8 +123,10 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       });
       // Agregar este código para depurar tiempos (puedes quitarlo después)
       if (kDebugMode && _duration.inSeconds > 0) {
-        print('Duración raw: ${duration?.inSeconds}, Corregida: ${_duration.inSeconds}');
-        print('Posición: ${_position.inSeconds}/${_duration.inSeconds}');
+        if (kDebugMode) {
+          print('Duración raw: ${duration?.inSeconds}, Corregida: ${_duration.inSeconds}');
+          print('Posición: ${_position.inSeconds}/${_duration.inSeconds}');
+        }
       }
     });
     
@@ -279,7 +281,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                 color: Colors.grey[900],
                 boxShadow: [
                   BoxShadow(
-                    color: Colors.black.withOpacity(0.3),
+                    color: Colors.black.withAlpha(77),  // 0.3 * 255 ≈ 77
                     blurRadius: 8,
                     offset: const Offset(0, -2),
                   ),
@@ -657,13 +659,13 @@ Future<void> _playSong(YouTubeVideo video) async {
                           
                           await PlaylistService.addSongToPlaylist(playlist.id, video);
                           
-                          if (!mounted) return;
-                          
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(
-                              content: Text('${video.title} añadida a ${playlist.name}'),
-                            ),
-                          );
+                          if (context.mounted) {  // Correcto para BuildContext pasado como parámetro
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(
+                                content: Text('${video.title} añadida a ${playlist.name}'),
+                              ),
+                            );
+                          }
                         },
                       );
                     },
@@ -739,9 +741,8 @@ Future<void> _playSong(YouTubeVideo video) async {
                 
                 await PlaylistService.addSongToPlaylist(playlist.id, video);
                 
-                if (!mounted) return;
-                
-                ScaffoldMessenger.of(context).showSnackBar(
+                if (!context.mounted) return;
+                 ScaffoldMessenger.of(context).showSnackBar(
                   SnackBar(
                     content: Text('${video.title} añadida a $name'),
                   ),
@@ -1036,6 +1037,7 @@ class SongSearchDelegate extends SearchDelegate<String> {
                   onThumbnailSelected(video.thumbnailUrl);
                   onSongSelected?.call(video);
                   
+                  if (!context.mounted) return;
                   ScaffoldMessenger.of(context).showSnackBar(
                     SnackBar(content: Text('Reproduciendo: ${video.title}')),
                   );
@@ -1068,14 +1070,20 @@ class SongSearchDelegate extends SearchDelegate<String> {
                 Navigator.pop(context);
                 if (PlaylistService.isFavorite(video.videoId)) {
                   await PlaylistService.removeFavorite(video.videoId);
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(content: Text('${video.title} quitada de favoritos')),
-                  );
+                  if (context.mounted) {
+                    // Mostrar SnackBar después de eliminar
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(content: Text('${video.title} quitada de favoritos')),
+                    );
+                  }
                 } else {
                   await PlaylistService.addFavorite(video);
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(content: Text('${video.title} añadida a favoritos')),
-                  );
+                  if (context.mounted) {
+                    // Mostrar SnackBar después de añadir
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(content: Text('${video.title} añadida a favoritos')),
+                    );
+                  }
                 }
               },
             ),
@@ -1107,9 +1115,25 @@ class SongSearchDelegate extends SearchDelegate<String> {
                         title: Text(playlist.name),
                         onTap: () async {
                           Navigator.pop(context);
+                          
+                          // Comprobar si la canción ya está en la lista
+                          bool songExists = playlist.songs.any(
+                            (song) => song.videoId == video.videoId
+                          );
+                          
+                          if (songExists) {
+                            if (!context.mounted) return;
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(
+                                content: Text('${video.title} ya está en ${playlist.name}'),
+                              ),
+                            );
+                            return;
+                          }
+                          
                           await PlaylistService.addSongToPlaylist(playlist.id, video);
                           
-                          if (context.mounted) {
+                          if (context.mounted) {  // Correcto para BuildContext pasado como parámetro
                             ScaffoldMessenger.of(context).showSnackBar(
                               SnackBar(
                                 content: Text('${video.title} añadida a ${playlist.name}'),

@@ -190,9 +190,8 @@ class _PlaylistsScreenState extends State<PlaylistsScreen> {
                                     onTap: () async {
                                       Navigator.pop(context);
                                       
-                                      final confirmContext = context;
                                       final confirm = await showDialog<bool>(
-                                        context: confirmContext,
+                                        context: context,  // ✅ Usar el contexto directamente
                                         builder: (alertContext) => AlertDialog(
                                           title: const Text('Eliminar playlist'),
                                           content: Text('¿Estás seguro de eliminar "${playlist.name}"?'),
@@ -209,8 +208,10 @@ class _PlaylistsScreenState extends State<PlaylistsScreen> {
                                         ),
                                       );
                                       
+                                      // Después del await, verifica si el widget sigue montado
                                       if (!mounted) return;
                                       
+                                      // Continuar con el resto del código
                                       if (confirm == true) {
                                         await PlaylistService.deletePlaylist(playlist.id);
                                         
@@ -246,7 +247,7 @@ class _PlaylistsScreenState extends State<PlaylistsScreen> {
                         if (result != null) {
                           AudioPlayerService().playSong(result);
                           // Solo navegar de vuelta si todavía está montado
-                          if (mounted) {
+                          if (context.mounted) {
                             Navigator.pop(context);
                           }
                         }
