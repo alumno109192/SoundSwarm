@@ -41,12 +41,26 @@ class _HomeScreenState extends State<HomeScreen> {
   void initState() {
     super.initState();
     
+    // Inicializar servicio y reproductor
+    // _apiService is already initialized as a final field, no need to reassign it here.
     _audioPlayer = AudioPlayer();
     
-    // Configurar el manejo de audio session para comportamiento correcto
+    // Configuración básica de audio
     AudioSession.instance.then((session) {
       session.configure(const AudioSessionConfiguration.music());
     });
+    
+    // Listeners básicos
+    _audioPlayer.playerStateStream.listen((state) {
+      if (state.processingState == ProcessingState.completed) {
+        // Manejar fin de reproducción
+        if (_relatedSongs.isNotEmpty && _currentSongIndex < _relatedSongs.length - 1) {
+          _playNextSong();
+        }
+      }
+    });
+    
+    // Resto de configuración...
     
     // Escuchar cambios en la posición de reproducción
     _audioPlayer.positionStream.listen((position) {
@@ -84,6 +98,31 @@ class _HomeScreenState extends State<HomeScreen> {
 
     // Configurar callback para el estado de la pantalla
     NotificationService.onScreenStateChanged = _handleScreenStateChange;
+
+    // Verificar si hay alguna canción actualmente en reproducción
+    _audioPlayer.playerStateStream.listen((state) {
+      if (state.playing) {
+        setState(() {
+          _isPlaying = true;
+        });
+      }
+    });
+    
+    // Comprobar si hay un problema con la canción actual
+    Future.delayed(const Duration(seconds: 1), () {
+      if (_currentSong == null && _audioPlayer.playing) {
+        setState(() {
+          _currentSong = YouTubeVideo(
+            videoId: 'unknown',
+            title: 'Canción actual',
+            description: '',
+            thumbnailUrl: '',
+            channelTitle: 'Desconocido',
+            publishedAt: '',
+          );
+        });
+      }
+    });
   }
 
   void _handleScreenStateChange(bool isLocked) {
@@ -212,54 +251,6 @@ class _HomeScreenState extends State<HomeScreen> {
                 ),
               ),
             const SizedBox(height: 20),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                IconButton(
-                  icon: const Icon(Icons.skip_previous, size: 35),
-                  onPressed: () async {
-                    if (_currentSong != null) {
-                      await _playPreviousSong();
-                    } else {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text('No hay una canción actual para volver atrás')),
-                      );
-                    }
-                  },
-                ),
-                IconButton(
-                  icon: Icon(
-                    _isPlaying ? Icons.pause_circle : Icons.play_circle,
-                    size: 50,
-                  ),
-                  onPressed: () {
-                    if (_isPlaying) {
-                      // Si está reproduciendo, pausar
-                      _audioPlayer.pause();
-                    } else if (_currentThumbnailUrl != null) {
-                      // Si hay una canción cargada, reanudar reproducción
-                      _audioPlayer.play();
-                    }
-                    
-                    setState(() {
-                      _isPlaying = !_isPlaying;
-                    });
-                  },
-                ),
-                IconButton(
-                  icon: const Icon(Icons.skip_next, size: 35),
-                  onPressed: () async {
-                    if (_currentSong != null) {
-                      await _playNextSong();
-                    } else {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text('No hay una canción actual para encontrar relacionadas')),
-                      );
-                    }
-                  },
-                ),
-              ],
-            ),
             const SizedBox(height: 20),
             Row(
               mainAxisAlignment: MainAxisAlignment.center,
@@ -335,38 +326,59 @@ class _HomeScreenState extends State<HomeScreen> {
             Row(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                // Botón anterior
+                // Botón anterior - Permitir que funcione siempre que haya una canción actual
                 IconButton(
                   icon: const Icon(Icons.skip_previous, size: 32),
-                  onPressed: _currentSongIndex > 0 ? _playPreviousSong : null,
+                  onPressed: _currentSong != null ? () {
+                    if (_currentSongIndex > 0) {
+                      _playPreviousSong();
+                    } else {
+                      // Si estamos en la primera canción, reiniciar desde el principio
+                      _audioPlayer.seek(Duration.zero);
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text('Volviendo al inicio de la canción')),
+                      );
+                    }
+                  } : null,
                 ),
                 
-                // Botón de reproducir/pausar
+                // Botón de reproducir/pausar - Simplificar la condición
                 IconButton(
                   icon: Icon(
                     _isPlaying ? Icons.pause_circle_filled : Icons.play_circle_filled,
                     size: 48,
                   ),
-                  onPressed: _currentSong != null
-                      ? () {
-                          if (_isPlaying) {
-                            _audioPlayer.pause();
-                          } else {
-                            _audioPlayer.play();
-                          }
-                          setState(() {
-                            _isPlaying = !_isPlaying;
-                          });
-                        }
-                      : null,
+                  onPressed: () {
+                    // Si está reproduciéndose audio, permitir pausar incluso si _currentSong es null
+                    if (_isPlaying) {
+                      _audioPlayer.pause();
+                      _isPlaying = false;
+                    } else if (_currentSong != null) {
+                      _audioPlayer.play();
+                      _isPlaying = true;
+                    } else {
+                      // Solo mostrar este mensaje si no hay audio reproduciéndose y _currentSong es null
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text('Por favor, busca y selecciona una canción primero')),
+                      );
+                    }
+                  },
                 ),
                 
-                // Botón siguiente
+                // Botón siguiente - Permitir que funcione siempre que haya una canción actual
                 IconButton(
                   icon: const Icon(Icons.skip_next, size: 32),
-                  onPressed: _relatedSongs.isNotEmpty && _currentSongIndex < _relatedSongs.length - 1
-                      ? _playNextSong
-                      : null,
+                  onPressed: _currentSong != null ? () {
+                    if (_relatedSongs.isNotEmpty && _currentSongIndex < _relatedSongs.length - 1) {
+                      _playNextSong();
+                    } else {
+                      // Si no hay canciones relacionadas o estamos en la última, intentar cargar más
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text('Buscando más canciones...')),
+                      );
+                      _loadRelatedSongs(_currentSong!.videoId);
+                    }
+                  } : null,
                 ),
                 
                 // Nuevo botón de opciones
@@ -452,35 +464,23 @@ class _HomeScreenState extends State<HomeScreen> {
       final audioService = AudioService();
       final audioUrl = await audioService.getAudioUrl(video.videoId);
       
-      // Actualizar UI inmediatamente
+      // Imprimir la URL para depuración
+      if (kDebugMode) {
+        print('URL de audio obtenida: ${audioUrl.substring(0, 50)}...');
+      }
+      
       setState(() {
         _currentSong = video;
         _currentThumbnailUrl = video.thumbnailUrl;
       });
       
-      // Crear MediaItem para la notificación
-      final mediaItem = MediaItem(
-        id: video.videoId,
-        title: video.title,
-        artist: video.channelTitle,
-        artUri: Uri.parse(video.thumbnailUrl),
-        duration: await _audioPlayer.setUrl(audioUrl),
-        // Usar una notificación compacta por defecto, que se expandirá
-        // solo cuando la pantalla esté bloqueada
-        displayDescription: NotificationService.isScreenLocked 
-            ? video.description 
-            : null, // No mostrar descripción en la notificación normal
-        displayTitle: video.title,
-        displaySubtitle: video.channelTitle,
-      );
+      // Usar setUrl() directamente ya que just_audio_background está desactivado
+      await _audioPlayer.setUrl(audioUrl);
       
-      // Reproducir con background playback
-      await _audioPlayer.setAudioSource(
-        AudioSource.uri(
-          Uri.parse(audioUrl),
-          tag: mediaItem,
-        ),
-      );
+      // Importante: verificar si se cargó correctamente
+      if (_audioPlayer.duration == null) {
+        throw Exception('No se pudo cargar el audio. URL inválida o inaccesible.');
+      }
       
       await _audioPlayer.play();
       
@@ -489,6 +489,9 @@ class _HomeScreenState extends State<HomeScreen> {
       setState(() {
         _isPlaying = true;
       });
+      
+      // Cargar canciones relacionadas
+      _loadRelatedSongs(video.videoId);
       
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Reproduciendo: ${video.title}')),
@@ -578,42 +581,6 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  void _showSongDetailsDialog(YouTubeVideo video) {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Detalles de la canción'),
-        content: SingleChildScrollView(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Image.network(video.thumbnailUrl),
-              const SizedBox(height: 16),
-              Text('Título: ${video.title}', 
-                style: const TextStyle(fontWeight: FontWeight.bold)),
-              const SizedBox(height: 8),
-              Text('Canal: ${video.channelTitle}'),
-              const SizedBox(height: 8),
-              Text('ID: ${video.videoId}'),
-              const SizedBox(height: 8),
-              Text('Publicado: ${video.publishedAt}'),
-              const SizedBox(height: 8),
-              const Text('Descripción:', style: TextStyle(fontWeight: FontWeight.bold)),
-              const SizedBox(height: 4),
-              Text(video.description),
-            ],
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cerrar'),
-          ),
-        ],
-      ),
-    );
-  }
 
   void _showAddToPlaylistDialog(YouTubeVideo video) {
     final playlists = PlaylistService.getPlaylists();
@@ -765,7 +732,6 @@ class SongSearchDelegate extends SearchDelegate<String> {
   final Function(String) onThumbnailSelected;
   final Function(bool) onPlayStateChanged;
   final Function(YouTubeVideo)? onSongSelected; // Añadir esta línea
-  bool _isPlaying = false;
   
   // Lista para almacenar el historial de búsquedas
   List<String> _searchHistory = [];
@@ -885,84 +851,44 @@ class SongSearchDelegate extends SearchDelegate<String> {
                 ),
                 onTap: () async {
                   try {
-                    if (_isPlaying) {
-                      // Pausar la reproducción
-                      await _audioPlayer.pause().then((_) {
-                        _isPlaying = false;
-                        onPlayStateChanged(false);
-                      });
-                      
-                      if (context.mounted) {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(content: Text('Pausado: ${video.title}')),
-                        );
-                      }
-                    } else {
-                      // Mostrar indicador de carga
-                      if (context.mounted) {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(content: Text('Cargando audio...')),
-                        );
-                      }
-                      
-                      // Reanudar o iniciar la reproducción
-                      final audioUrl = await _audioService.getAudioUrl(video.videoId);
-                      
-                      // Debugging
-                      if (kDebugMode) {
-                        print('URL de audio: $audioUrl');
-                      }
-                      
-                      // Verificar que la URL sea válida
-                      if (audioUrl.isEmpty) {
-                        throw Exception('No se pudo obtener la URL del audio');
-                      }
-                      
-                      // Configurar el reproductor con manejadores de errores
-                      try {
-                        await _audioPlayer.setUrl(audioUrl);
-                      } catch (e) {
-                        if (kDebugMode) {
-                          print('Error al configurar URL: $e');
-                        }
-                        throw Exception('Error al configurar reproductor: $e');
-                      }
-                      
-                      // Esperar a que la duración esté disponible
-                      try {
-                        final duration = await _audioPlayer.durationStream.first;
-                        if (kDebugMode) {
-                          print('Duración de la canción: ${duration?.inSeconds ?? 0} segundos');
-                        }
-                      } catch (e) {
-                        if (kDebugMode) {
-                          print('Error al obtener duración: $e');
-                        }
-                        // Continuar a pesar del error de duración
-                      }
-                      
-                      // Intentar reproducir
-                      try {
-                        await _audioPlayer.play();
-                        _isPlaying = true;
-                        onPlayStateChanged(true);
-                        onThumbnailSelected(video.thumbnailUrl);
-                        
-                        if (context.mounted) {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(content: Text('Reproduciendo: ${video.title}')),
-                          );
-                          
-                          Navigator.pop(context);
-                        }
-                      } catch (e) {
-                        if (kDebugMode) {
-                          print('Error específico al reproducir: $e');
-                        }
-                        throw Exception('Error al iniciar reproducción: $e');
-                      }
+                    // Mostrar indicador de carga
+                    if (context.mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(content: Text('Cargando audio...')),
+                      );
                     }
-                    onSongSelected?.call(video); // Notificar que se seleccionó una canción
+                    
+                    // Obtener URL del audio
+                    final audioUrl = await _audioService.getAudioUrl(video.videoId);
+                    
+                    if (kDebugMode) {
+                      print('URL de audio: $audioUrl');
+                    }
+                    
+                    // Verificar que la URL sea válida
+                    if (audioUrl.isEmpty) {
+                      throw Exception('No se pudo obtener la URL del audio');
+                    }
+                    
+                    // Usar setUrl (ya que JustAudioBackground está desactivado)
+                    await _audioPlayer.setUrl(audioUrl);
+                    
+                    // Iniciar reproducción
+                    await _audioPlayer.play();
+                    
+                    // Actualizar estado
+                    onPlayStateChanged(true);
+                    onThumbnailSelected(video.thumbnailUrl);
+                    onSongSelected?.call(video);
+                    
+                    if (context.mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(content: Text('Reproduciendo: ${video.title}')),
+                      );
+                      
+                      // Cerrar la búsqueda
+                      Navigator.pop(context);
+                    }
                   } catch (e) {
                     if (kDebugMode) {
                       print('Error detallado: $e');
@@ -1041,14 +967,15 @@ class SongSearchDelegate extends SearchDelegate<String> {
                 try {
                   // Mostrar indicador de carga
                   ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(content: Text('Cargando audio...')),
+                    const SnackBar(content: Text('Cargando audio...')),
                   );
                   
                   final audioUrl = await _audioService.getAudioUrl(video.videoId);
+                  
+                  // Usar setUrl en lugar de setAudioSource
                   await _audioPlayer.setUrl(audioUrl);
                   await _audioPlayer.play();
                   
-                  _isPlaying = true;
                   onPlayStateChanged(true);
                   onThumbnailSelected(video.thumbnailUrl);
                   onSongSelected?.call(video);

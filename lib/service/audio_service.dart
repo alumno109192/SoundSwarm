@@ -39,9 +39,9 @@ class AudioService {
       return url;
     } catch (e) {
       if (kDebugMode) {
-        print('Error en AudioService.getAudioUrl: $e');
+        print('Error en getAudioUrl: $e');
       }
-      throw Exception('No se pudo obtener el audio: $e');
+      throw Exception('Error al obtener URL de audio: $e');
     }
   }
 
