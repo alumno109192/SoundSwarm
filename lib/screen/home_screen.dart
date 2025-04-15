@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:soundswarm/model/youtube_video.dart';
 import 'package:soundswarm/screen/drawer.dart';
-import 'package:soundswarm/service/audio_player_service.dart';
 import 'package:soundswarm/service/notification_service.dart';
 import 'package:soundswarm/service/youtube_api_service.dart';
 import 'package:just_audio/just_audio.dart';
@@ -13,7 +12,6 @@ import 'package:flutter/foundation.dart';
 import 'package:soundswarm/service/playlist_service.dart';
 import 'package:audio_session/audio_session.dart';
 import 'package:just_audio_background/just_audio_background.dart';
-import 'package:soundswarm/main.dart' show isJustAudioBackgroundInitialized;
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -136,31 +134,6 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         _isPlaying = isPlaying;
       });
     });
-  }
-
-  void _handleScreenStateChange(bool isLocked) {
-    // Cuando la pantalla se bloquea, asegurarse de que los controles de reproducción estén visibles
-    // incluso si la app estaba en segundo plano
-    if (isLocked && _isPlaying) {
-      // Si estamos reproduciendo y la pantalla se bloquea, asegurarse de que los controles
-      // de reproducción estén visibles en la pantalla de bloqueo
-      _ensureMediaControlsVisible();
-    }
-  }
-
-  // Modificar este método para evitar el corte de audio
-  void _ensureMediaControlsVisible() {
-    if (_audioPlayer.playing) {
-      try {
-        if (kDebugMode) {
-          print('Manteniendo reproducción activa en segundo plano');
-        }
-      } catch (e) {
-        if (kDebugMode) {
-          print('Error al asegurar visibilidad de controles: $e');
-        }
-      }
-    }
   }
 
   // Función auxiliar para formatear duración en MM:SS
