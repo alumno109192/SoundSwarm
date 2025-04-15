@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
 import 'package:just_audio_background/just_audio_background.dart';
 import 'package:soundswarm/screen/home_screen.dart';
-import 'package:soundswarm/service/notification_service.dart';
 
 // Variable global para indicar si just_audio_background está inicializado
 bool isJustAudioBackgroundInitialized = false;

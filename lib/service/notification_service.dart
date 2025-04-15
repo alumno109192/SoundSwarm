@@ -20,7 +20,7 @@ class NotificationService {
       // requestPermission method is not defined for Screen, removing this call
       
       // Suscribirse a cambios de estado de pantalla
-      _screenSubscription = _screen.screenStateStream?.listen(_onScreenStateEvent);
+      _screenSubscription = _screen.screenStateStream.listen(_onScreenStateEvent);
       
       _initialized = true;
       
