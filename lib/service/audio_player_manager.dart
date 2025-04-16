@@ -4,12 +4,13 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:just_audio_background/just_audio_background.dart';
+import 'package:soundswarm/model/playlist.dart';
 import 'package:soundswarm/model/youtube_video.dart';
 import 'package:soundswarm/service/audio_service.dart';
-import 'package:soundswarm/service/api_service.dart';
 import 'package:soundswarm/service/playlist_service.dart'; // Add this import
 import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:convert';
+import 'package:soundswarm/service/recent_songs_service.dart';
 
 class AudioPlayerManager extends ChangeNotifier {
   // Singleton pattern
@@ -58,7 +59,6 @@ class AudioPlayerManager extends ChangeNotifier {
   YouTubeVideo? _currentSong;
   List<YouTubeVideo> _relatedSongs = [];
   int _currentSongIndex = 0;
-  final YouTubeApiService _apiService = YouTubeApiService();
   
   // Duration tracking for UI
   Duration _position = Duration.zero;
@@ -234,6 +234,9 @@ class AudioPlayerManager extends ChangeNotifier {
       // Limpiar recursos del servicio
       audioService.dispose();
       
+      // Guardar canción como reproducida recientemente
+      await RecentSongsService.addRecentSong(video);
+      
     } catch (e) {
       if (kDebugMode) {
         print('Error general en playSong: $e');
@@ -254,25 +257,6 @@ class AudioPlayerManager extends ChangeNotifier {
           print('ID de video vacío, no se pueden cargar canciones relacionadas');
         }
         return;
-      }
-      
-      final relatedVideos = await _apiService.getRelatedVideos(
-        videoId, 
-        title: _currentSong?.title ?? '',
-        artist: _currentSong?.channelTitle ?? '',
-      );
-      
-      if (relatedVideos.isNotEmpty) {
-        _relatedSongs = relatedVideos;
-        _currentSongIndex = 0;
-        
-        if (kDebugMode) {
-          print('Se cargaron ${relatedVideos.length} canciones relacionadas');
-        }
-      } else {
-        if (kDebugMode) {
-          print('No se encontraron canciones relacionadas');
-        }
       }
       
       // Notificar a los oyentes si usas ChangeNotifier
@@ -427,114 +411,138 @@ class AudioPlayerManager extends ChangeNotifier {
     showModalBottomSheet(
       context: context,
       builder: (context) {
-        return Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            ListTile(
-              leading: const Icon(Icons.playlist_add),
-              title: const Text('Añadir a una lista'),
-              onTap: () {
-                Navigator.pop(context);
-                _showAddToPlaylistDialog(context, currentSong);
-              },
-            ),
-            ListTile(
-              leading: const Icon(Icons.favorite),
-              title: Text(
-                PlaylistService.isFavorite(currentSong.videoId)
-                    ? 'Quitar de favoritos'
-                    : 'Añadir a favoritos',
-              ),
-              onTap: () async {
-                Navigator.pop(context);
-                if (PlaylistService.isFavorite(currentSong.videoId)) {
-                  await PlaylistService.removeFavorite(currentSong.videoId);
-                  if (context.mounted) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(content: Text('${currentSong.title} quitada de favoritos')),
-                    );
-                  }
-                } else {
-                  await PlaylistService.addFavorite(currentSong);
-                  if (context.mounted) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(content: Text('${currentSong.title} añadida a favoritos')),
-                    );
-                  }
-                }
-              },
-            ),
-          ],
+        return FutureBuilder<bool>(
+          // Obtener estado de favorito de forma asíncrona
+          future: PlaylistService.isFavorite(currentSong.videoId),
+          builder: (context, snapshot) {
+            // Usar el valor del Future o false si aún no está disponible
+            final isFavorite = snapshot.data ?? false;
+            
+            return Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                ListTile(
+                  leading: const Icon(Icons.playlist_add),
+                  title: const Text('Añadir a una lista'),
+                  onTap: () {
+                    Navigator.pop(context);
+                    _showAddToPlaylistDialog(context, currentSong);
+                  },
+                ),
+                ListTile(
+                  leading: const Icon(Icons.favorite),
+                  title: Text(
+                    isFavorite
+                        ? 'Quitar de favoritos'
+                        : 'Añadir a favoritos',
+                  ),
+                  onTap: () async {
+                    Navigator.pop(context);
+                    // Obtener estado actualizado
+                    final currentIsFavorite = await PlaylistService.isFavorite(currentSong.videoId);
+                    
+                    if (currentIsFavorite) {
+                      await PlaylistService.removeFavorite(currentSong.videoId);
+                      if (context.mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(content: Text('${currentSong.title} quitada de favoritos')),
+                        );
+                      }
+                    } else {
+                      await PlaylistService.addFavorite(currentSong);
+                      if (context.mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(content: Text('${currentSong.title} añadida a favoritos')),
+                        );
+                      }
+                    }
+                  },
+                ),
+              ],
+            );
+          },
         );
       },
     );
   }
 
   void _showAddToPlaylistDialog(BuildContext context, YouTubeVideo video) {
-    final playlists = PlaylistService.getPlaylists();
-    
     showDialog(
       context: context,
       builder: (context) {
-        return AlertDialog(
-          title: const Text('Añadir a lista'),
-          content: SizedBox(
-            width: double.maxFinite,
-            height: 300,
-            child: playlists.isEmpty 
-                ? const Center(child: Text('No tienes listas creadas'))
-                : ListView.builder(
-                    shrinkWrap: true,
-                    itemCount: playlists.length,
-                    itemBuilder: (context, index) {
-                      final playlist = playlists[index];
-                      return ListTile(
-                        title: Text(playlist.name),
-                        onTap: () async {
-                          Navigator.pop(context);
-                          
-                          // Comprobar si la canción ya está en la lista
-                          bool songExists = playlist.songs.any(
-                            (song) => song.videoId == video.videoId
+        return FutureBuilder<List<Playlist>>(
+          future: PlaylistService.getPlaylists(),
+          builder: (context, snapshot) {
+            if (snapshot.connectionState == ConnectionState.waiting) {
+              return const AlertDialog(
+                title: Text('Cargando listas...'),
+                content: Center(child: CircularProgressIndicator()),
+              );
+            }
+            
+            final playlists = snapshot.data ?? [];
+            
+            return AlertDialog(
+              title: const Text('Añadir a lista'),
+              content: SizedBox(
+                width: double.maxFinite,
+                height: 300,
+                child: playlists.isEmpty 
+                    ? const Center(child: Text('No tienes listas creadas'))
+                    : ListView.builder(
+                        shrinkWrap: true,
+                        itemCount: playlists.length,
+                        itemBuilder: (context, index) {
+                          final playlist = playlists[index];
+                          return ListTile(
+                            title: Text(playlist.name),
+                            onTap: () async {
+                              Navigator.pop(context);
+                              
+                              // Comprobar si la canción ya está en la lista
+                              bool songExists = playlist.songs.any(
+                                (song) => song.videoId == video.videoId
+                              );
+                              
+                              if (songExists) {
+                                if (!context.mounted) return;
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(
+                                    content: Text('${video.title} ya está en ${playlist.name}'),
+                                  ),
+                                );
+                                return;
+                              }
+                              
+                              await PlaylistService.addSongToPlaylist(playlist.id, video);
+                              
+                              if (context.mounted) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(
+                                    content: Text('${video.title} añadida a ${playlist.name}'),
+                                  ),
+                                );
+                              }
+                            },
                           );
-                          
-                          if (songExists) {
-                            if (!context.mounted) return;
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(
-                                content: Text('${video.title} ya está en ${playlist.name}'),
-                              ),
-                            );
-                            return;
-                          }
-                          
-                          await PlaylistService.addSongToPlaylist(playlist.id, video);
-                          
-                          if (context.mounted) {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(
-                                content: Text('${video.title} añadida a ${playlist.name}'),
-                              ),
-                            );
-                          }
                         },
-                      );
-                    },
-                  ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('Cancelar'),
-            ),
-            TextButton(
-              onPressed: () {
-                Navigator.pop(context);
-                _showCreatePlaylistDialog(context, video);
-              },
-              child: const Text('Nueva lista'),
-            ),
-          ],
+                      ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(context),
+                  child: const Text('Cancelar'),
+                ),
+                TextButton(
+                  onPressed: () {
+                    Navigator.pop(context);
+                    _showCreatePlaylistDialog(context, video);
+                  },
+                  child: const Text('Nueva lista'),
+                ),
+              ],
+            );
+          },
         );
       },
     );

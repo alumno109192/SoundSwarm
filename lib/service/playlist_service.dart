@@ -1,166 +1,296 @@
-import 'dart:convert';
-import 'package:flutter/foundation.dart';
-import 'package:shared_preferences/shared_preferences.dart';
-import 'package:soundswarm/model/playlist.dart';
 import 'package:soundswarm/model/youtube_video.dart';
+import 'package:soundswarm/model/playlist.dart';
+import 'package:soundswarm/service/file_storage_service.dart';
+import 'package:flutter/foundation.dart';
 
 class PlaylistService {
-  static const String _playlistsKey = 'user_playlists';
-  static const String _favoritesKey = 'favorite_songs';
-  static List<Playlist> _cachedPlaylists = [];
-  static List<YouTubeVideo> _cachedFavorites = [];
-  static bool _initialized = false;
-
-  // Inicializar el servicio (llamar en main.dart)
-  static Future<void> initialize() async {
-    if (_initialized) return;
-    
-    await _loadPlaylists();
-    await _loadFavorites();
-    _initialized = true;
-  }
-
+  // Nombre de los archivos JSON
+  static const String _playlistsFileName = 'playlists.json';
+  static const String _favoritesFileName = 'favorites.json';
+  
+  // Caché en memoria
+  static List<Playlist>? _playlistsCache;
+  static List<YouTubeVideo>? _favoritesCache;
+  
+  // MÉTODOS PARA PLAYLISTS
+  
   // Obtener todas las playlists
-  static List<Playlist> getPlaylists() {
-    return List.from(_cachedPlaylists);
-  }
-
-  // Crear nueva playlist
-  static Future<Playlist> createPlaylist(String name, {String? description}) async {
-    final playlist = Playlist.create(name, description: description);
-    _cachedPlaylists.add(playlist);
-    await _savePlaylists();
-    return playlist;
-  }
-
-  // Obtener playlist por ID
-  static Playlist? getPlaylist(String id) {
-    return _cachedPlaylists.firstWhere(
-      (playlist) => playlist.id == id,
-      orElse: () => throw Exception('Playlist no encontrada'),
-    );
-  }
-
-  // Actualizar playlist existente
-  static Future<void> updatePlaylist(Playlist playlist) async {
-    final index = _cachedPlaylists.indexWhere((p) => p.id == playlist.id);
-    if (index >= 0) {
-      _cachedPlaylists[index] = playlist;
-      await _savePlaylists();
+  static Future<List<Playlist>> getPlaylists() async {
+    // Si ya tenemos las playlists en caché, devolvemos la caché
+    if (_playlistsCache != null) {
+      return _playlistsCache!;
     }
-  }
-
-  // Eliminar playlist
-  static Future<void> deletePlaylist(String id) async {
-    _cachedPlaylists.removeWhere((playlist) => playlist.id == id);
-    await _savePlaylists();
-  }
-
-  // Añadir canción a playlist
-  static Future<void> addSongToPlaylist(String playlistId, YouTubeVideo song) async {
-    final playlist = getPlaylist(playlistId);
-    if (playlist != null) {
-      playlist.addSong(song);
-      await updatePlaylist(playlist);
-    }
-  }
-
-  // Quitar canción de playlist
-  static Future<void> removeSongFromPlaylist(String playlistId, String videoId) async {
-    final playlist = getPlaylist(playlistId);
-    if (playlist != null) {
-      playlist.removeSong(videoId);
-      await updatePlaylist(playlist);
-    }
-  }
-
-  // Favoritos como playlist especial
-  static List<YouTubeVideo> getFavorites() {
-    return List.from(_cachedFavorites);
-  }
-
-  static Future<void> addFavorite(YouTubeVideo song) async {
-    if (!_cachedFavorites.any((s) => s.videoId == song.videoId)) {
-      _cachedFavorites.add(song);
-      await _saveFavorites();
-    }
-  }
-
-  static Future<void> removeFavorite(String videoId) async {
-    _cachedFavorites.removeWhere((song) => song.videoId == videoId);
-    await _saveFavorites();
-  }
-
-  static bool isFavorite(String videoId) {
-    return _cachedFavorites.any((song) => song.videoId == videoId);
-  }
-
-  // Métodos privados para cargar/guardar datos
-  static Future<void> _loadPlaylists() async {
+    
     try {
-      final prefs = await SharedPreferences.getInstance();
-      final playlistsJson = prefs.getStringList(_playlistsKey) ?? [];
+      // Leer el archivo JSON de playlists
+      final playlistsJson = await FileStorageService.readFromFile(_playlistsFileName);
       
-      _cachedPlaylists = playlistsJson
-          .map((json) => Playlist.fromJson(jsonDecode(json)))
-          .toList();
-          
-      if (_cachedPlaylists.isEmpty) {
-        // Crear playlist "Favoritos" si no existe ninguna
-        _cachedPlaylists.add(Playlist.create('Mis favoritos', 
-          description: 'Tus canciones favoritas'));
-        await _savePlaylists();
+      if (playlistsJson == null) {
+        // Si no hay archivo, devolver lista vacía
+        _playlistsCache = [];
+        return [];
       }
+      
+      // Convertir JSON a lista de Playlist
+      final playlists = (playlistsJson as List)
+          .map((json) => Playlist.fromJson(json))
+          .toList();
+      
+      // Guardar en caché
+      _playlistsCache = playlists;
+      
+      return playlists;
     } catch (e) {
       if (kDebugMode) {
-        print('Error al cargar playlists: $e');
+        print('Error al obtener playlists: $e');
       }
-      _cachedPlaylists = [];
+      return [];
     }
   }
-
-  static Future<void> _savePlaylists() async {
+  
+  // Guardar todas las playlists
+  static Future<void> _savePlaylists(List<Playlist> playlists) async {
     try {
-      final prefs = await SharedPreferences.getInstance();
-      final playlistsJson = _cachedPlaylists
-          .map((playlist) => jsonEncode(playlist.toJson()))
-          .toList();
+      // Convertir playlists a JSON
+      final playlistsJson = playlists.map((playlist) => playlist.toJson()).toList();
       
-      await prefs.setStringList(_playlistsKey, playlistsJson);
+      // Guardar en archivo
+      await FileStorageService.saveToFile(_playlistsFileName, playlistsJson);
+      
+      // Actualizar caché
+      _playlistsCache = playlists;
     } catch (e) {
       if (kDebugMode) {
         print('Error al guardar playlists: $e');
       }
+      rethrow;
     }
   }
-
-  static Future<void> _loadFavorites() async {
+  
+  // Obtener una playlist por ID
+  static Future<Playlist?> getPlaylist(String id) async {
+    final playlists = await getPlaylists();
+    return playlists.firstWhere((playlist) => playlist.id == id, orElse: () => null as Playlist);
+  }
+  
+  // Crear nueva playlist
+  static Future<Playlist> createPlaylist(String name, {String? description}) async {
     try {
-      final prefs = await SharedPreferences.getInstance();
-      final favoritesJson = prefs.getStringList(_favoritesKey) ?? [];
+      // Crear nueva playlist
+      final playlist = Playlist.create(name, description: description);
       
-      _cachedFavorites = favoritesJson
-          .map((json) => YouTubeVideo.fromJson(jsonDecode(json)))
-          .toList();
+      // Obtener playlists existentes
+      final playlists = await getPlaylists();
+      
+      // Añadir nueva playlist
+      playlists.add(playlist);
+      
+      // Guardar playlists
+      await _savePlaylists(playlists);
+      
+      return playlist;
     } catch (e) {
       if (kDebugMode) {
-        print('Error al cargar favoritos: $e');
+        print('Error al crear playlist: $e');
       }
-      _cachedFavorites = [];
+      rethrow;
     }
   }
-
-  static Future<void> _saveFavorites() async {
+  
+  // Añadir canción a playlist
+  static Future<void> addSongToPlaylist(String playlistId, YouTubeVideo song) async {
     try {
-      final prefs = await SharedPreferences.getInstance();
-      final favoritesJson = _cachedFavorites
-          .map((song) => jsonEncode(song.toJson()))
+      // Obtener playlists
+      final playlists = await getPlaylists();
+      
+      // Buscar playlist
+      final playlistIndex = playlists.indexWhere((p) => p.id == playlistId);
+      
+      if (playlistIndex == -1) {
+        throw Exception('Playlist no encontrada');
+      }
+      
+      // Añadir canción
+      playlists[playlistIndex].addSong(song);
+      
+      // Guardar playlists
+      await _savePlaylists(playlists);
+    } catch (e) {
+      if (kDebugMode) {
+        print('Error al añadir canción a playlist: $e');
+      }
+      rethrow;
+    }
+  }
+  
+  // Eliminar canción de playlist
+  static Future<void> removeSongFromPlaylist(String playlistId, String videoId) async {
+    try {
+      // Obtener playlists
+      final playlists = await getPlaylists();
+      
+      // Buscar playlist
+      final playlistIndex = playlists.indexWhere((p) => p.id == playlistId);
+      
+      if (playlistIndex == -1) {
+        throw Exception('Playlist no encontrada');
+      }
+      
+      // Eliminar canción
+      playlists[playlistIndex].removeSong(videoId);
+      
+      // Guardar playlists
+      await _savePlaylists(playlists);
+    } catch (e) {
+      if (kDebugMode) {
+        print('Error al eliminar canción de playlist: $e');
+      }
+      rethrow;
+    }
+  }
+  
+  // Eliminar playlist
+  static Future<void> deletePlaylist(String id) async {
+    try {
+      // Obtener playlists
+      final playlists = await getPlaylists();
+      
+      // Eliminar playlist
+      playlists.removeWhere((playlist) => playlist.id == id);
+      
+      // Guardar playlists
+      await _savePlaylists(playlists);
+    } catch (e) {
+      if (kDebugMode) {
+        print('Error al eliminar playlist: $e');
+      }
+      rethrow;
+    }
+  }
+  
+  // MÉTODOS PARA FAVORITOS
+  
+  // Obtener canciones favoritas
+  static Future<List<YouTubeVideo>> getFavorites() async {
+    // Si ya tenemos los favoritos en caché, devolvemos la caché
+    if (_favoritesCache != null) {
+      return _favoritesCache!;
+    }
+    
+    try {
+      // Leer el archivo JSON de favoritos
+      final favoritesJson = await FileStorageService.readFromFile(_favoritesFileName);
+      
+      if (favoritesJson == null) {
+        // Si no hay archivo, devolver lista vacía
+        _favoritesCache = [];
+        return [];
+      }
+      
+      // Convertir JSON a lista de YouTubeVideo
+      final favorites = (favoritesJson as List)
+          .map((json) => YouTubeVideo.fromJson(json))
           .toList();
       
-      await prefs.setStringList(_favoritesKey, favoritesJson);
+      // Guardar en caché
+      _favoritesCache = favorites;
+      
+      return favorites;
+    } catch (e) {
+      if (kDebugMode) {
+        print('Error al obtener favoritos: $e');
+      }
+      return [];
+    }
+  }
+  
+  // Guardar favoritos
+  static Future<void> _saveFavorites(List<YouTubeVideo> favorites) async {
+    try {
+      // Convertir favoritos a JSON
+      final favoritesJson = favorites.map((video) => video.toJson()).toList();
+      
+      // Guardar en archivo
+      await FileStorageService.saveToFile(_favoritesFileName, favoritesJson);
+      
+      // Actualizar caché
+      _favoritesCache = favorites;
     } catch (e) {
       if (kDebugMode) {
         print('Error al guardar favoritos: $e');
+      }
+      rethrow;
+    }
+  }
+  
+  // Verificar si una canción es favorita
+  static Future<bool> isFavorite(String videoId) async {
+    final favorites = await getFavorites();
+    return favorites.any((video) => video.videoId == videoId);
+  }
+  
+  // Añadir canción a favoritos
+  static Future<void> addFavorite(YouTubeVideo song) async {
+    try {
+      // Obtener favoritos
+      final favorites = await getFavorites();
+      
+      // Verificar si ya existe
+      if (favorites.any((video) => video.videoId == song.videoId)) {
+        return; // Ya existe, no hacer nada
+      }
+      
+      // Añadir canción
+      favorites.add(song);
+      
+      // Guardar favoritos
+      await _saveFavorites(favorites);
+    } catch (e) {
+      if (kDebugMode) {
+        print('Error al añadir favorito: $e');
+      }
+      rethrow;
+    }
+  }
+  
+  // Eliminar canción de favoritos
+  static Future<void> removeFavorite(String videoId) async {
+    try {
+      // Obtener favoritos
+      final favorites = await getFavorites();
+      
+      // Eliminar canción
+      favorites.removeWhere((video) => video.videoId == videoId);
+      
+      // Guardar favoritos
+      await _saveFavorites(favorites);
+    } catch (e) {
+      if (kDebugMode) {
+        print('Error al eliminar favorito: $e');
+      }
+      rethrow;
+    }
+  }
+  
+  // Limpiar caché (útil al cerrar la aplicación)
+  static void clearCache() {
+    _playlistsCache = null;
+    _favoritesCache = null;
+  }
+
+  // Añadir este método a la clase PlaylistService
+  static Future<void> initialize() async {
+    try {
+      // Precarga las listas de reproducción y favoritos en la caché
+      await getPlaylists();
+      await getFavorites();
+      
+      if (kDebugMode) {
+        print('PlaylistService inicializado con éxito');
+      }
+    } catch (e) {
+      if (kDebugMode) {
+        print('Error al inicializar PlaylistService: $e');
       }
     }
   }

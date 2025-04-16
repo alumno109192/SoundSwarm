@@ -41,7 +41,7 @@ class _PlaylistDetailScreenState extends State<PlaylistDetailScreen> {
     });
 
     try {
-      final playlist = PlaylistService.getPlaylist(widget.playlistId);
+      final playlist = await PlaylistService.getPlaylist(widget.playlistId);
       setState(() {
         _playlist = playlist;
       });
@@ -150,47 +150,55 @@ class _PlaylistDetailScreenState extends State<PlaylistDetailScreen> {
     showModalBottomSheet(
       context: context,
       builder: (context) {
-        return Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            ListTile(
-              leading: const Icon(Icons.play_arrow),
-              title: const Text('Reproducir'),
-              onTap: () {
-                Navigator.pop(context);
-                _playSong(song);
-              },
-            ),
-            ListTile(
-              leading: const Icon(Icons.playlist_remove),
-              title: const Text('Quitar de esta playlist'),
-              onTap: () async {
-                Navigator.pop(context);
-                await PlaylistService.removeSongFromPlaylist(
-                  widget.playlistId, 
-                  song.videoId,
-                );
-                _loadPlaylist();
-              },
-            ),
-            ListTile(
-              leading: const Icon(Icons.favorite),
-              title: Text(
-                PlaylistService.isFavorite(song.videoId)
-                    ? 'Quitar de favoritos'
-                    : 'Añadir a favoritos',
-              ),
-              onTap: () async {
-                Navigator.pop(context);
-                if (PlaylistService.isFavorite(song.videoId)) {
-                  await PlaylistService.removeFavorite(song.videoId);
-                } else {
-                  await PlaylistService.addFavorite(song);
-                }
-                _loadPlaylist();
-              },
-            ),
-          ],
+        return FutureBuilder<bool>(
+          // Obtener el estado de favorito de forma asíncrona
+          future: PlaylistService.isFavorite(song.videoId),
+          builder: (context, snapshot) {
+            final isFavorite = snapshot.data ?? false;
+            
+            return Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                ListTile(
+                  leading: const Icon(Icons.play_arrow),
+                  title: const Text('Reproducir'),
+                  onTap: () {
+                    Navigator.pop(context);
+                    _playSong(song);
+                  },
+                ),
+                ListTile(
+                  leading: const Icon(Icons.playlist_remove),
+                  title: const Text('Quitar de esta playlist'),
+                  onTap: () async {
+                    Navigator.pop(context);
+                    await PlaylistService.removeSongFromPlaylist(
+                      widget.playlistId, 
+                      song.videoId,
+                    );
+                    _loadPlaylist();
+                  },
+                ),
+                ListTile(
+                  leading: const Icon(Icons.favorite),
+                  title: Text(
+                    isFavorite 
+                        ? 'Quitar de favoritos'
+                        : 'Añadir a favoritos',
+                  ),
+                  onTap: () async {
+                    Navigator.pop(context);
+                    if (isFavorite) {
+                      await PlaylistService.removeFavorite(song.videoId);
+                    } else {
+                      await PlaylistService.addFavorite(song);
+                    }
+                    _loadPlaylist();
+                  },
+                ),
+              ],
+            );
+          },
         );
       },
     );

@@ -10,8 +10,8 @@ Future<void> main() async {
   
   // Inicializar just_audio_background
   await JustAudioBackground.init(
-    androidNotificationChannelId: 'com.example.soundswarm.channel.audio',
-    androidNotificationChannelName: 'SoundSwarm',
+    androidNotificationChannelId: 'com.example.sonicswap.channel.audio',
+    androidNotificationChannelName: 'SonicSwap',
     androidNotificationOngoing: true,
     androidStopForegroundOnPause: true,
   );

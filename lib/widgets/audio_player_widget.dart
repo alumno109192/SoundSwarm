@@ -4,7 +4,6 @@ import 'package:just_audio/just_audio.dart';
 import 'package:just_audio_background/just_audio_background.dart';
 import 'package:soundswarm/model/youtube_video.dart';
 import 'package:soundswarm/service/audio_service.dart';
-import 'package:soundswarm/service/api_service.dart';
 import 'dart:math';
 
 class AudioPlayerWidget extends StatefulWidget {
@@ -33,7 +32,6 @@ class _AudioPlayerWidgetState extends State<AudioPlayerWidget> {
   Duration _duration = Duration.zero;
   List<YouTubeVideo> _relatedSongs = [];
   int _currentSongIndex = 0;
-  final YouTubeApiService _apiService = YouTubeApiService();
   
   // Añadir esta variable para mantener una copia interna
   YouTubeVideo? _localCurrentSong;
@@ -116,25 +114,6 @@ class _AudioPlayerWidgetState extends State<AudioPlayerWidget> {
         return;
       }
       
-      final relatedVideos = await _apiService.getRelatedVideos(
-        videoId, 
-        title: widget.currentSong?.title ?? '',
-        artist: widget.currentSong?.channelTitle ?? '',
-      );
-      
-      if (relatedVideos.isNotEmpty) {
-        setState(() {
-          _relatedSongs = relatedVideos;
-          _currentSongIndex = 0;
-        });
-        if (kDebugMode) {
-          print('Se cargaron ${relatedVideos.length} canciones relacionadas');
-        }
-      } else {
-        if (kDebugMode) {
-          print('No se encontraron canciones relacionadas');
-        }
-      }
     } catch (e) {
       if (kDebugMode) {
         print('Error al cargar canciones relacionadas: $e');

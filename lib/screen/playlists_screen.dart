@@ -34,8 +34,13 @@ class _PlaylistsScreenState extends State<PlaylistsScreen> {
     
     if (!mounted) return;
     
+    // Obtener playlists de forma asíncrona
+    final playlists = await PlaylistService.getPlaylists();
+    
+    if (!mounted) return;
+    
     setState(() {
-      _playlists = PlaylistService.getPlaylists();
+      _playlists = playlists;
       _isLoading = false;
     });
   }
@@ -92,8 +97,13 @@ class _PlaylistsScreenState extends State<PlaylistsScreen> {
                 
                 if (!mounted) return;
                 
+                // Obtener playlists actualizadas de forma asíncrona
+                final playlists = await PlaylistService.getPlaylists();
+                
+                if (!mounted) return;
+                
                 setState(() {
-                  _playlists = PlaylistService.getPlaylists();
+                  _playlists = playlists;
                 });
               }
             },
@@ -217,8 +227,13 @@ class _PlaylistsScreenState extends State<PlaylistsScreen> {
                                         
                                         if (!mounted) return;
                                         
+                                        // Obtener playlists actualizadas de forma asíncrona
+                                        final playlists = await PlaylistService.getPlaylists();
+                                        
+                                        if (!mounted) return;
+                                        
                                         setState(() {
-                                          _playlists = PlaylistService.getPlaylists();
+                                          _playlists = playlists;
                                         });
                                       }
                                     },

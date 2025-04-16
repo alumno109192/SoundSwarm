@@ -6,12 +6,14 @@ import 'package:soundswarm/model/youtube_video.dart';
 class FastApiService {
   // URL base del servidor FastAPI (ajusta según tu configuración)
   final String _baseUrl = 'http://192.168.0.101:8000';
+  // URL base para producción
+  final String _baseUrlPro = 'https://yt-dlp-uvag.onrender.com';
   
   // Obtener información de audio por ID de video
   Future<String> getAudioUrl(String videoId) async {
     try {
       final response = await http.get(
-        Uri.parse('$_baseUrl/audioinfo?url=https://www.youtube.com/watch?v=$videoId')
+        Uri.parse('$_baseUrlPro/audioinfo?url=https://www.youtube.com/watch?v=$videoId')
       );
       
       if (response.statusCode == 200) {
@@ -33,7 +35,7 @@ class FastApiService {
     try {
       // En lugar de usar el endpoint search, implementemos uno para la búsqueda
       final response = await http.get(
-        Uri.parse('$_baseUrl/search?query=${Uri.encodeComponent(query)}')
+        Uri.parse('$_baseUrlPro/search?query=${Uri.encodeComponent(query)}')
       );
       
       if (response.statusCode == 200) {
