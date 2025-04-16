@@ -2,7 +2,6 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import 'package:http/http.dart' as http;
 import 'package:just_audio/just_audio.dart';
 import 'package:just_audio_background/just_audio_background.dart';
 import 'package:soundswarm/model/youtube_video.dart';
@@ -322,18 +321,9 @@ class AudioPlayerManager extends ChangeNotifier {
         }
         
         // Obtener URL del audio
-        final audioUrl = await audioService.getAudioUrl(nextVideo.videoId);
         
         // Reproducir
         try {
-          final mediaItem = MediaItem(
-            id: nextVideo.videoId,
-            title: nextVideo.title,
-            artist: nextVideo.channelTitle,
-            artUri: Uri.parse(nextVideo.thumbnailUrl),
-            displayTitle: nextVideo.title,
-            displaySubtitle: nextVideo.channelTitle,
-          );
           
         } catch (e) {
           if (kDebugMode) {
@@ -386,18 +376,9 @@ class AudioPlayerManager extends ChangeNotifier {
         }
         
         // Obtener URL del audio
-        final audioUrl = await audioService.getAudioUrl(previousVideo.videoId);
         
         // Reproducir
         try {
-          final mediaItem = MediaItem(
-            id: previousVideo.videoId,
-            title: previousVideo.title,
-            artist: previousVideo.channelTitle,
-            artUri: Uri.parse(previousVideo.thumbnailUrl),
-            displayTitle: previousVideo.title,
-            displaySubtitle: previousVideo.channelTitle,
-          );
 
           await _audioPlayer.play();
           
@@ -649,11 +630,6 @@ class AudioPlayerManager extends ChangeNotifier {
     if (onPlayStateChanged != null) {
       onPlayStateChanged!(isPlaying);
     }
-  }
-  
-  @override
-  void dispose() {
-    _audioPlayer.dispose();
   }
 
   // Método para guardar la canción actual en caché

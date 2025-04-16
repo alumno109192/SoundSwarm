@@ -6,13 +6,10 @@ import 'package:soundswarm/service/notification_service.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter/foundation.dart';
-import 'dart:convert';
 import 'package:soundswarm/service/playlist_service.dart';
-import 'package:just_audio_background/just_audio_background.dart';
 import 'package:soundswarm/service/audio_player_manager.dart';
 import 'package:soundswarm/service/music_provider.dart';
 import 'package:soundswarm/service/offline_mode_service.dart';
-import 'package:http/http.dart' as http;
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -236,7 +233,6 @@ class SongSearchDelegate extends SearchDelegate<String> {
   }
   // Reemplazar YouTubeApiService por MusicProvider
   final MusicProvider _musicProvider = MusicProvider();
-  final AudioPlayer _audioPlayer;
   final Function(String) onThumbnailSelected;
   final Function(bool) onPlayStateChanged;
   final Function(YouTubeVideo)? onSongSelected;
@@ -249,7 +245,7 @@ class SongSearchDelegate extends SearchDelegate<String> {
     required this.onPlayStateChanged,
     required AudioPlayer audioPlayer,
     this.onSongSelected,
-  }) : _audioPlayer = audioPlayer {
+  }) {
     _loadSearchHistory();
   }
   
@@ -500,19 +496,6 @@ class SongSearchDelegate extends SearchDelegate<String> {
                           playerManager.setCurrentSong(video);
                           playerManager.setThumbnail(video.thumbnailUrl);
                           
-                          // Obtener URL del audio usando MusicProvider
-                          final audioUrl = await _musicProvider.getAudioUrl(video.videoId);
-                          
-                          // Crear MediaItem para just_audio_background
-                          final mediaItem = MediaItem(
-                            id: video.videoId,
-                            title: video.title,
-                            artist: video.channelTitle,
-                            artUri: Uri.parse(video.thumbnailUrl),
-                            displayTitle: video.title,
-                            displaySubtitle: video.channelTitle,
-                          );
-                          
                           // Usar el método correcto
                           // Opción 1: Usar playSafe que toma una URL y un MediaItem
                           await playerManager.playSong(context, video);
@@ -590,19 +573,6 @@ class SongSearchDelegate extends SearchDelegate<String> {
                   // Actualizar datos visuales inmediatamente
                   playerManager.setCurrentSong(video);
                   playerManager.setThumbnail(video.thumbnailUrl);
-                  
-                  // Usar MusicProvider para obtener URL
-                  final audioUrl = await _musicProvider.getAudioUrl(video.videoId);
-                  
-                  // Usar el método seguro de reproducción
-                  final mediaItem = MediaItem(
-                    id: video.videoId,
-                    title: video.title,
-                    artist: video.channelTitle,
-                    artUri: Uri.parse(video.thumbnailUrl),
-                    displayTitle: video.title,
-                    displaySubtitle: video.channelTitle,
-                  );
                   
                   // Reproducción segura con manejo de errores integrado
                   await playerManager.playSong(context, video);
@@ -823,26 +793,4 @@ class SongSearchDelegate extends SearchDelegate<String> {
     );
   }
 
-  // Añadir este método a SongSearchDelegate
-  Future<String> _getFallbackAudioUrl(String videoId) async {
-    try {
-      // Intentar obtener la URL desde una fuente diferente
-      final response = await http.get(
-        Uri.parse('https://pipedapi.kavin.rocks/streams/$videoId')
-      );
-      
-      if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
-        final audioStreams = data['audioStreams'] as List;
-        
-        if (audioStreams.isNotEmpty) {
-          return audioStreams.first['url'];
-        }
-      }
-      
-      return '';
-    } catch (e) {
-      return '';
-    }
-  }
 }
