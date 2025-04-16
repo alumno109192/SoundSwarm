@@ -1,14 +1,10 @@
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:just_audio/just_audio.dart';
-import 'package:just_audio_background/just_audio_background.dart';
 import 'package:soundswarm/model/playlist.dart';
 import 'package:soundswarm/model/youtube_video.dart';
-import 'package:soundswarm/screen/home_screen.dart';
-import 'package:soundswarm/service/audio_service.dart';
 import 'package:soundswarm/service/playlist_service.dart';
+import 'package:soundswarm/service/audio_player_manager.dart';
 
-// 1. Modificar PlaylistDetailScreen para aceptar el AudioPlayer principal:
 class PlaylistDetailScreen extends StatefulWidget {
   final String playlistId;
   final AudioPlayer? audioPlayer; // Añadir este parámetro
@@ -26,13 +22,11 @@ class PlaylistDetailScreen extends StatefulWidget {
 class _PlaylistDetailScreenState extends State<PlaylistDetailScreen> {
   Playlist? _playlist;
   bool _isLoading = true;
-  // NO crear una nueva instancia aquí
 
   @override
   void initState() {
     super.initState();
     _loadPlaylist();
-    // Eliminar inicialización del reproductor
   }
 
   @override
@@ -204,15 +198,16 @@ class _PlaylistDetailScreenState extends State<PlaylistDetailScreen> {
 
   // Modificar _playSong en PlaylistDetailScreen:
   void _playSong(YouTubeVideo song) {
-    // Mostrar indicador de carga
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('Reproduciendo: ${song.title}')),
-    );
-    
-    // Reproducir sin cerrar la pantalla
-    HomeScreen.playSong(context, song);
-    
-    // No cerramos la pantalla automáticamente
-    // El usuario puede seguir explorando la playlist
+    try {
+      // Usar AudioPlayerManager en lugar de HomeScreen.playSong
+      final playerManager = AudioPlayerManager();
+      playerManager.playSong(context, song);
+      
+      // No es necesario cerrar la pantalla
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error al reproducir: $e')),
+      );
+    }
   }
 }

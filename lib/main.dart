@@ -1,48 +1,20 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/foundation.dart';
 import 'package:just_audio_background/just_audio_background.dart';
 import 'package:soundswarm/screen/home_screen.dart';
-
-// Variable global para indicar si just_audio_background está inicializado
-bool isJustAudioBackgroundInitialized = false;
+import 'package:soundswarm/service/audio_player_manager.dart';
+import 'package:soundswarm/widgets/audio_player_widget.dart';
 
 Future<void> main() async {
+  // Asegurarse de que los bindings están inicializados
   WidgetsFlutterBinding.ensureInitialized();
   
-  // Manejo de errores para la inicialización
-  try {
-    // Inicializar just_audio_background con timeout
-    await JustAudioBackground.init(
-      androidNotificationChannelId: 'com.soundswarm.channel.audio',
-      androidNotificationChannelName: 'SoundSwarm Audio',
-      androidNotificationOngoing: false, // Cambiar a false para evitar problemas iniciales
-      androidShowNotificationBadge: true,
-      androidStopForegroundOnPause: true, // Cambiar a true para reducir problemas
-      notificationColor: Colors.blue,
-      androidNotificationIcon: 'mipmap/ic_launcher',
-    ).timeout(
-      const Duration(seconds: 15), // Aumentar tiempo de espera
-      onTimeout: () {
-        if (kDebugMode) {
-          print('Timeout al inicializar JustAudioBackground, continuando sin él');
-        }
-        return;
-      },
-    );
-    
-    // Marcar como inicializado
-    isJustAudioBackgroundInitialized = true;
-    
-    if (kDebugMode) {
-      print('JustAudioBackground inicializado correctamente');
-    }
-  } catch (e) {
-    // Capturar cualquier error para evitar que la app se bloquee
-    if (kDebugMode) {
-      print('Error al inicializar JustAudioBackground: $e');
-      print('La app continuará sin funcionalidad de reproducción en segundo plano');
-    }
-  }
+  // Inicializar just_audio_background
+  await JustAudioBackground.init(
+    androidNotificationChannelId: 'com.example.soundswarm.channel.audio',
+    androidNotificationChannelName: 'SoundSwarm',
+    androidNotificationOngoing: true,
+    androidStopForegroundOnPause: true,
+  );
   
   runApp(const MyApp());
 }
@@ -62,7 +34,59 @@ class MyApp extends StatelessWidget {
           elevation: 0,
         ),
       ),
-      home: HomeScreen(),
+      home: const AppShell(),
+    );
+  }
+}
+
+// Nueva clase para mantener el reproductor persistente
+class AppShell extends StatefulWidget {
+  const AppShell({super.key});
+
+  @override
+  State<AppShell> createState() => _AppShellState();
+}
+
+class _AppShellState extends State<AppShell> {
+  // Singleton para toda la app
+  final AudioPlayerManager _playerManager = AudioPlayerManager();
+  
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      body: Column(
+        children: [
+          // Contenido principal expandible
+          Expanded(
+            child: Navigator(
+              // Navegador anidado para las pantallas de la app
+              onGenerateRoute: (settings) {
+                // Por defecto, mostrar la pantalla de inicio
+                return MaterialPageRoute(
+                  builder: (context) => const HomeScreen(),
+                );
+              },
+            ),
+          ),
+          
+          // Reproductor persistente en la parte inferior
+          AudioPlayerWidget(
+            audioPlayer: _playerManager.audioPlayer,
+            currentSong: _playerManager.currentSong,
+            currentThumbnailUrl: _playerManager.currentThumbnailUrl,
+            onSongChanged: (song) {
+              setState(() {
+                // El manager ya mantiene actualizado el estado
+              });
+            },
+            onThumbnailChanged: (url) {
+              setState(() {
+                // El manager ya mantiene actualizado el estado
+              });
+            },
+          ),
+        ],
+      ),
     );
   }
 }

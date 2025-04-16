@@ -3,71 +3,67 @@ import 'package:flutter/services.dart';
 import 'package:soundswarm/model/youtube_video.dart';
 import 'package:soundswarm/screen/drawer.dart';
 import 'package:soundswarm/service/notification_service.dart';
-import 'package:soundswarm/service/youtube_api_service.dart';
 import 'package:just_audio/just_audio.dart';
-import 'package:soundswarm/service/audio_service.dart';
-import 'dart:math';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter/foundation.dart';
+import 'dart:convert';
 import 'package:soundswarm/service/playlist_service.dart';
-import 'package:audio_session/audio_session.dart';
 import 'package:just_audio_background/just_audio_background.dart';
+import 'package:soundswarm/service/audio_player_manager.dart';
+import 'package:soundswarm/service/music_provider.dart';
+import 'package:soundswarm/service/offline_mode_service.dart';
+import 'package:http/http.dart' as http;
 
 class HomeScreen extends StatefulWidget {
-  // GlobalKey para acceder a la instancia desde cualquier lugar
-  static final GlobalKey<_HomeScreenState> homeScreenKey = GlobalKey<_HomeScreenState>();
-  
-  const HomeScreen({super.key});  // Eliminar el valor por defecto
+  const HomeScreen({super.key});
 
   @override
   State<HomeScreen> createState() => _HomeScreenState();
-  
-  // Método estático para reproducir canciones desde cualquier parte de la app
-  static void playSong(BuildContext context, YouTubeVideo video) {
-    final state = homeScreenKey.currentState;
-    if (state != null) {
-      state._playSong(video);
-    } else {
-      // Si no podemos obtener el state, navegar a HomeScreen
-      Navigator.pushAndRemoveUntil(
-        context,
-        MaterialPageRoute(builder: (context) => HomeScreen(key: HomeScreen.homeScreenKey)),
-        (route) => false,
-      ).then((_) {
-        // Intentar reproducir después de que HomeScreen esté cargada
-        homeScreenKey.currentState?._playSong(video);
-      });
-    }
-  }
 }
 
 class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
-  bool _isPlaying = false;
-  String? _currentThumbnailUrl;
-  late AudioPlayer _audioPlayer;
-  YouTubeVideo? _currentSong;
-  List<YouTubeVideo> _relatedSongs = [];
-  int _currentSongIndex = 0;
-  final YouTubeApiService _apiService = YouTubeApiService();
-  
-  // Variables para el slider
-  Duration _position = Duration.zero;
-  Duration _duration = Duration.zero;
+  late AudioPlayerManager _playerManager;
   
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     
-    // Inicialización del reproductor
-    _audioPlayer = AudioPlayer();
+    // Inicializar AudioPlayerManager
+    _playerManager = AudioPlayerManager();
     
-    // IMPORTANTE: configurar los listeners inmediatamente
-    _setupAudioPlayerListeners();
+    // Configurar callbacks para actualizar la UI
+    _playerManager.onThumbnailChanged = (url) {
+      setState(() {
+        // No necesitamos _currentThumbnailUrl local
+      });
+    };
     
-    // Resto de inicialización
+    _playerManager.onSongChanged = (song) {
+      setState(() {
+        // Si hay una nueva canción, cargar canciones relacionadas
+        if (song != null) {
+          _playerManager.loadRelatedSongs(song.videoId);
+        }
+      });
+    };
+    
+    _playerManager.onPlayStateChanged = (isPlaying) {
+      setState(() {
+        // No necesitamos _isPlaying local
+      });
+    };
+    
+    // Solo mantener esto
     _loadSearchHistory();
-    _initializeAudioServices();
+  }
+  
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    NotificationService.onScreenStateChanged = null;
+    // No necesitamos disponer _audioPlayer, lo maneja AudioPlayerManager
+    super.dispose();
   }
 
   Future<void> _loadSearchHistory() async {
@@ -80,14 +76,6 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   }
 
   @override
-  void dispose() {
-    WidgetsBinding.instance.removeObserver(this);
-    NotificationService.onScreenStateChanged = null;
-    _audioPlayer.dispose(); // Liberar recursos al cerrar
-    super.dispose();
-  }
-  
-  @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
       // La app está visible de nuevo, no necesitamos hacer nada especial
@@ -95,76 +83,6 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       // La app está en segundo plano, asegurarse de que la reproducción continúe
       // No hacer seek u operaciones disruptivas aquí
     }
-  }
-
-  Future<void> _initializeAudioServices() async {
-    try {
-      final session = await AudioSession.instance;
-      // Usar una configuración más simple para evitar el error OSStatus -50
-      await session.configure(const AudioSessionConfiguration.music());
-      
-      if (kDebugMode) {
-        print('Servicios de audio inicializados correctamente');
-      }
-    } catch (e) {
-      if (kDebugMode) {
-        print('Error al inicializar servicios de audio: $e');
-      }
-    }
-  }
-
-  void _setupAudioPlayerListeners() {
-    // Asegurarse de que no hay listeners duplicados
-    _audioPlayer.playerStateStream.listen((state) {
-      if (state.processingState == ProcessingState.completed) {
-        // Manejar fin de reproducción
-        if (_relatedSongs.isNotEmpty && _currentSongIndex < _relatedSongs.length - 1) {
-          _playNextSong();
-        }
-      }
-      
-      // Actualizar UI siempre que cambie el estado
-      setState(() {});
-    });
-    
-    // IMPORTANTE: Asegurar que positionStream y durationStream actualizan la UI
-    _audioPlayer.positionStream.listen((position) {
-      setState(() {
-        _position = position;
-      });
-    });
-    
-    _audioPlayer.durationStream.listen((duration) {
-      setState(() {
-        // Aquí está el problema: la duración reportada es el doble de la real
-        // En lugar de dividir en varios lugares, corregirla aquí
-        _duration = duration != null 
-            ? Duration(seconds: (duration.inSeconds / 2).round()) 
-            : Duration.zero;
-      });
-      // Agregar este código para depurar tiempos (puedes quitarlo después)
-      if (kDebugMode && _duration.inSeconds > 0) {
-        if (kDebugMode) {
-          print('Duración raw: ${duration?.inSeconds}, Corregida: ${_duration.inSeconds}');
-          print('Posición: ${_position.inSeconds}/${_duration.inSeconds}');
-        }
-      }
-    });
-    
-    // Listener crucial para isPlaying
-    _audioPlayer.playingStream.listen((isPlaying) {
-      setState(() {
-        _isPlaying = isPlaying;
-      });
-    });
-  }
-
-  // Función auxiliar para formatear duración en MM:SS
-  String _formatDuration(Duration duration) {
-    String twoDigits(int n) => n.toString().padLeft(2, '0');
-    final minutes = twoDigits(duration.inMinutes.remainder(60));
-    final seconds = twoDigits(duration.inSeconds.remainder(60));
-    return "$minutes:$seconds";
   }
 
   @override
@@ -182,22 +100,20 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                 delegate: SongSearchDelegate(
                   onThumbnailSelected: (thumbnailUrl) {
                     setState(() {
-                      _currentThumbnailUrl = thumbnailUrl; // Actualizar la carátula
+                      _playerManager.onThumbnailChanged?.call(thumbnailUrl);
                     });
                   },
                   onPlayStateChanged: (isPlaying) {
                     setState(() {
-                      _isPlaying = isPlaying; // Actualizar el estado de reproducción
+                      _playerManager.onPlayStateChanged?.call(isPlaying);
                     });
                   },
                   onSongSelected: (video) {
                     setState(() {
-                      _currentSong = video;
+                      _playerManager.onSongChanged?.call(video);
                     });
-                    // Cargar canciones relacionadas cuando se selecciona una canción
-                    _loadRelatedSongs(video.videoId);
                   },
-                  audioPlayer: _audioPlayer, // Pasar el reproductor compartido
+                  audioPlayer: _playerManager.audioPlayer,
                 ),
               );
             },
@@ -206,597 +122,134 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       ),
       drawer: const AppDrawer(),
       body: SafeArea(
-        child: Column(
-          children: [
-            // Área principal expandible con portada e información
-            Expanded(
-              child: Center(
-                child: SingleChildScrollView(
-                  child: Column(
+        child: Center(
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                // Portada del álbum
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    // Carátula
+                    Container(
+                      width: 200,
+                      height: 200,
+                      decoration: BoxDecoration(
+                        color: Colors.grey[800],
+                        borderRadius: BorderRadius.circular(10),
+                        image: _playerManager.currentThumbnailUrl != null && 
+                               _playerManager.currentThumbnailUrl!.isNotEmpty
+                            ? DecorationImage(
+                                image: NetworkImage(_playerManager.currentThumbnailUrl!), 
+                                fit: BoxFit.cover,
+                                onError: (exception, stackTrace) {
+                                  if (kDebugMode) {
+                                    print('Error al cargar imagen: $exception');
+                                  }
+                                },
+                              )
+                            : null,
+                      ),
+                      key: ValueKey(_playerManager.currentThumbnailUrl),
+                      child: _playerManager.currentThumbnailUrl == null || 
+                             _playerManager.currentThumbnailUrl!.isEmpty
+                          ? const Icon(Icons.music_note, size: 50, color: Colors.white)
+                          : null,
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 10),
+                
+                // Información de la canción con botón de opciones
+                if (_playerManager.currentSong != null)
+                  Row(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      // Portada del álbum
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          // Carátula
-                          Container(
-                            width: 200,
-                            height: 200,
-                            decoration: BoxDecoration(
-                              color: Colors.grey[800],
-                              borderRadius: BorderRadius.circular(10),
-                              image: _currentThumbnailUrl != null && _currentThumbnailUrl!.isNotEmpty
-                                  ? DecorationImage(
-                                      image: NetworkImage(_currentThumbnailUrl!), 
-                                      fit: BoxFit.cover,
-                                      onError: (exception, stackTrace) {
-                                        if (kDebugMode) {
-                                          print('Error al cargar imagen: $exception');
-                                        }
-                                      },
-                                    )
-                                  : null,
-                            ),
-                            key: ValueKey(_currentThumbnailUrl),
-                            child: _currentThumbnailUrl == null || _currentThumbnailUrl!.isEmpty
-                                ? const Icon(Icons.music_note, size: 50, color: Colors.white)
-                                : null,
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 10),
-                      
-                      // Información de la canción con botón de opciones
-                      if (_currentSong != null)
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Expanded(
-                              child: Padding(
-                                padding: const EdgeInsets.symmetric(horizontal: 20),
-                                child: Text(
-                                  _currentSong!.title,
-                                  style: const TextStyle(
-                                    fontWeight: FontWeight.bold,
-                                    fontSize: 16,
-                                  ),
-                                  textAlign: TextAlign.center,
-                                  maxLines: 2,
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-                              ),
-                            ),
-                            
-                            // Botón de opciones junto al título
-                            IconButton(
-                              icon: const Icon(Icons.more_vert),
-                              onPressed: () {
-                                _showCurrentSongOptions();
-                              },
-                            ),
-                          ],
-                        ),
-                      if (_currentSong != null)
-                        Padding(
+                      Expanded(
+                        child: Padding(
                           padding: const EdgeInsets.symmetric(horizontal: 20),
                           child: Text(
-                            _currentSong!.channelTitle,
-                            style: TextStyle(
-                              color: Colors.grey[600],
-                              fontSize: 14,
+                            _playerManager.currentSong!.title,
+                            style: const TextStyle(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 16,
                             ),
                             textAlign: TextAlign.center,
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
                           ),
                         ),
-                    ],
-                  ),
-                ),
-              ),
-            ),
-            
-            // Panel fijo de controles en la parte inferior
-            Container(
-              padding: const EdgeInsets.only(bottom: 20, top: 10),
-              decoration: BoxDecoration(
-                color: Colors.grey[900],
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withAlpha(77),  // 0.3 * 255 ≈ 77
-                    blurRadius: 8,
-                    offset: const Offset(0, -2),
-                  ),
-                ],
-              ),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  // Slider de tiempo
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      // Tiempo actual
-                      SizedBox(
-                        width: 45,
-                        child: Text(
-                          _formatDuration(_position),
-                          style: const TextStyle(
-                            fontWeight: FontWeight.bold,
-                            fontSize: 12,
-                          ),
-                        ),
-                      ),
-                      // Slider
-                      Expanded(
-                        child: SliderTheme(
-                          data: SliderTheme.of(context).copyWith(
-                            activeTrackColor: Colors.blue[700],
-                            inactiveTrackColor: Colors.grey[300],
-                            thumbColor: Colors.blue,
-                            thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 8.0),
-                            overlayShape: const RoundSliderOverlayShape(overlayRadius: 14.0),
-                            tickMarkShape: const RoundSliderTickMarkShape(),
-                            showValueIndicator: ShowValueIndicator.always,
-                          ),
-                          child: Slider(
-                            min: 0,
-                            // No dividir aquí, ya lo hiciste en el listener
-                            max: _duration.inSeconds.toDouble(),
-                            // No dividir aquí tampoco
-                            value: min(_position.inSeconds.toDouble(), _duration.inSeconds.toDouble()),
-                            label: _formatDuration(Duration(seconds: _position.inSeconds)),
-                            onChanged: (value) {
-                              setState(() {
-                                _position = Duration(seconds: value.toInt());
-                              });
-                            },
-                            onChangeEnd: (value) async {
-                              try {
-                                final position = Duration(seconds: value.toInt());
-                                await _audioPlayer.seek(position);
-                                
-                                if (!_isPlaying && _currentThumbnailUrl != null) {
-                                  await _audioPlayer.play();
-                                  setState(() {
-                                    _isPlaying = true;
-                                  });
-                                }
-                              } catch (e) {
-                                if (kDebugMode) {
-                                  print('Error al buscar posición: $e');
-                                }
-                              }
-                            },
-                          ),
-                        ),
-                      ),
-                      // Duración total
-                      SizedBox(
-                        width: 45,
-                        child: Text(
-                          // No dividir aquí, ya lo corregimos en el listener
-                          _formatDuration(_duration),
-                          style: const TextStyle(
-                            fontWeight: FontWeight.bold,
-                            fontSize: 12,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                  
-                  // ÚNICO conjunto de controles de reproducción
-                  Row(
-                    key: const ValueKey('playback_controls'),
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      // Botón anterior
-                      IconButton(
-                        icon: const Icon(Icons.skip_previous, size: 32),
-                        onPressed: _currentSong != null ? () {
-                          if (_currentSongIndex > 0) {
-                            _playPreviousSong();
-                          } else {
-                            _audioPlayer.seek(Duration.zero);
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(content: Text('Volviendo al inicio de la canción')),
-                            );
-                          }
-                        } : null,
                       ),
                       
-                      // Botón de reproducir/pausar
+                      // Botón de opciones junto al título
                       IconButton(
-                        icon: Icon(
-                          _isPlaying ? Icons.pause_circle_filled : Icons.play_circle_filled,
-                          size: 48,
-                        ),
+                        icon: const Icon(Icons.more_vert),
                         onPressed: () {
-                          if (_isPlaying) {
-                            _audioPlayer.pause();
-                            setState(() {
-                              _isPlaying = false;
-                            });
-                          } else if (_currentSong != null) {
-                            _audioPlayer.play();
-                            setState(() {
-                              _isPlaying = true;
-                            });
-                          } else {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(content: Text('Por favor, busca y selecciona una canción primero')),
-                            );
-                          }
+                          _playerManager.showCurrentSongOptions(context);
                         },
-                      ),
-                      
-                      // Botón siguiente
-                      IconButton(
-                        icon: const Icon(Icons.skip_next, size: 32),
-                        onPressed: _currentSong != null ? () {
-                          if (_relatedSongs.isNotEmpty && _currentSongIndex < _relatedSongs.length - 1) {
-                            _playNextSong();
-                          } else {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(content: Text('Buscando más canciones...')),
-                            );
-                            _loadRelatedSongs(_currentSong!.videoId);
-                          }
-                        } : null,
                       ),
                     ],
                   ),
-                ],
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Future<void> _loadRelatedSongs(String videoId) async {
-    try {
-      if (videoId.isEmpty) {
-        if (kDebugMode) {
-          print('ID de video vacío, no se pueden cargar canciones relacionadas');
-        }
-        return;
-      }
-      
-      // Utilizar el API de YouTube para obtener videos relacionados, pasando título y artista
-      final relatedVideos = await _apiService.getRelatedVideos(
-        videoId, 
-        title: _currentSong?.title ?? '',
-        artist: _currentSong?.channelTitle ?? '',
-      );
-      
-      if (relatedVideos.isNotEmpty) {
-        setState(() {
-          _relatedSongs = relatedVideos;
-          _currentSongIndex = 0;
-        });
-        if (kDebugMode) {
-          print('Se cargaron ${relatedVideos.length} canciones relacionadas');
-        }
-      } else {
-        if (kDebugMode) {
-          print('No se encontraron canciones relacionadas');
-        }
-      }
-    } catch (e) {
-      if (kDebugMode) {
-        print('Error al cargar canciones relacionadas: $e');
-      }
-    }
-  }
-
-  // Método para reproducir la siguiente canción
-  Future<void> _playNextSong() async {
-    if (_relatedSongs.isEmpty || _currentSongIndex >= _relatedSongs.length - 1) {
-      // Si no hay canciones relacionadas o estamos en la última, intentar cargar más
-      if (_currentSong != null) {
-        await _loadRelatedSongs(_currentSong!.videoId);
-      }
-      
-      // Si aún no hay canciones relacionadas, mostrar mensaje
-      if (_relatedSongs.isEmpty) {
-        return;
-      }
-    }
-    
-    _currentSongIndex++;
-    if (_currentSongIndex < _relatedSongs.length) {
-      await _playSong(_relatedSongs[_currentSongIndex]);
-    }
-  }
-
-  // Modificar el método _playSong para usar una estrategia adaptativa
-
-Future<void> _playSong(YouTubeVideo video) async {
-  try {
-    final audioService = AudioService();
-    
-    // IMPORTANTE: Actualizar el estado ANTES de iniciar la carga de audio
-    setState(() {
-      _currentSong = video;
-      _currentThumbnailUrl = video.thumbnailUrl;
-    });
-    
-    // Obtener URL del audio
-    final audioUrl = await audioService.getAudioUrl(video.videoId);
-    
-    // Reproducir
-    try {
-      final mediaItem = MediaItem(
-        id: video.videoId,
-        title: video.title,
-        artist: video.channelTitle,
-        artUri: Uri.parse(video.thumbnailUrl),
-        displayTitle: video.title,
-        displaySubtitle: video.channelTitle,
-      );
-      
-      await _audioPlayer.setAudioSource(
-        AudioSource.uri(
-          Uri.parse(audioUrl),
-          tag: mediaItem,
-        ),
-      );
-    } catch (e) {
-      if (kDebugMode) {
-        print('Error con background playback: $e');
-      }
-      await _audioPlayer.setUrl(audioUrl);
-    }
-    
-    await _audioPlayer.play();
-    
-    // Limpiar recursos
-    audioService.dispose();
-  } catch (e) {
-    if (kDebugMode) {
-      print('Error al reproducir: $e');
-    }
-    
-    if (!mounted) return;
-    
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('Error al reproducir: $e')),
-    );
-  }
-}
-
-  // Método para reproducir la canción anterior
-  Future<void> _playPreviousSong() async {
-    if (_relatedSongs.isEmpty || _currentSongIndex <= 0) {
-      // Si estamos en la primera canción o no hay canciones previas
-      if (_currentSongIndex == 0 && _relatedSongs.isNotEmpty) {
-        // Si estamos en la primera canción pero hay canciones relacionadas,
-        // simplemente reiniciar la canción actual
-        await _audioPlayer.seek(Duration.zero);
-        return;
-      }
-      
-      if (!mounted) return; // Agregar verificación antes de usar context
-      
-      // Si no hay canciones relacionadas, mostrar mensaje
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('No hay canciones anteriores disponibles')),
-      );
-      return;
-    }
-    
-    // Decrementar el índice y reproducir la canción previa
-    _currentSongIndex--;
-    await _playSong(_relatedSongs[_currentSongIndex]);
-  }
-
-  void _showCurrentSongOptions() {
-  // Si no hay canción actual, mostrar mensaje informativo
-  if (_currentSong == null) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('Primero debes reproducir una canción para ver las opciones'),
-        duration: Duration(seconds: 3),
-      ),
-    );
-    return;
-  }
-
-  // Código existente para cuando hay una canción seleccionada
-  showModalBottomSheet(
-    context: context,
-    builder: (context) {
-      return Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          ListTile(
-            leading: const Icon(Icons.playlist_add),
-            title: const Text('Añadir a una lista'),
-            onTap: () {
-              Navigator.pop(context);
-              _showAddToPlaylistDialog(_currentSong!);
-            },
-          ),
-          ListTile(
-            leading: const Icon(Icons.favorite),
-            title: Text(
-              PlaylistService.isFavorite(_currentSong!.videoId)
-                  ? 'Quitar de favoritos'
-                  : 'Añadir a favoritos',
-            ),
-            onTap: () async {
-              // Código existente...
-            },
-          ),
-        ],
-      );
-    },
-  );
-}
-
-  void _showAddToPlaylistDialog(YouTubeVideo video) {
-    final playlists = PlaylistService.getPlaylists();
-    
-    showDialog(
-      context: context,
-      builder: (context) {
-        return AlertDialog(
-          title: const Text('Añadir a lista'),
-          content: SizedBox(
-            width: double.maxFinite,
-            height: 300,
-            child: playlists.isEmpty 
-                ? const Center(child: Text('No tienes listas creadas'))
-                : ListView.builder(
-                    shrinkWrap: true,
-                    itemCount: playlists.length,
-                    itemBuilder: (context, index) {
-                      final playlist = playlists[index];
-                      return ListTile(
-                        title: Text(playlist.name),
-                        subtitle: Text(
-                          '${playlist.songs.length} ${playlist.songs.length == 1 ? 'canción' : 'canciones'}',
-                          style: TextStyle(fontSize: 12, color: Colors.grey[400]),
-                        ),
-                        onTap: () async {
-                          Navigator.pop(context);
-                          
-                          // Comprobar si la canción ya está en la lista
-                          bool songExists = playlist.songs.any(
-                            (song) => song.videoId == video.videoId
-                          );
-                          
-                          if (songExists) {
-                            if (!mounted) return;
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(
-                                content: Text('${video.title} ya está en ${playlist.name}'),
-                              ),
-                            );
-                            return;
-                          }
-                          
-                          await PlaylistService.addSongToPlaylist(playlist.id, video);
-                          
-                          if (context.mounted) {  // Correcto para BuildContext pasado como parámetro
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(
-                                content: Text('${video.title} añadida a ${playlist.name}'),
-                              ),
-                            );
-                          }
-                        },
-                      );
-                    },
+                if (_playerManager.currentSong != null)
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 20),
+                    child: Text(
+                      _playerManager.currentSong!.channelTitle,
+                      style: TextStyle(
+                        color: Colors.grey[600],
+                        fontSize: 14,
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
                   ),
+              ],
+            ),
           ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('Cancelar'),
-            ),
-            TextButton(
-              onPressed: () {
-                Navigator.pop(context);
-                _showCreatePlaylistDialog(video);
-              },
-              child: const Text('Nueva lista'),
-            ),
-          ],
+        ),
+      ),
+    );
+  }
+}
+
+
+// Clase correcta del buscador
+class SongSearchDelegate extends SearchDelegate<String> {
+  @override
+  Widget buildSuggestions(BuildContext context) {
+    // Provide suggestions based on the query
+    final suggestions = _searchHistory.where((history) => history.startsWith(query)).toList();
+
+    return ListView.builder(
+      itemCount: suggestions.length,
+      itemBuilder: (context, index) {
+        final suggestion = suggestions[index];
+        return ListTile(
+          title: Text(suggestion),
+          onTap: () {
+            query = suggestion;
+            showResults(context);
+          },
         );
       },
     );
   }
-
-  void _showCreatePlaylistDialog(YouTubeVideo video) {
-    final nameController = TextEditingController();
-    final descriptionController = TextEditingController();
-
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Nueva lista'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TextField(
-              controller: nameController,
-              decoration: const InputDecoration(
-                labelText: 'Nombre',
-                hintText: 'Ej: Mis favoritas',
-              ),
-              autofocus: true,
-            ),
-            const SizedBox(height: 8),
-            TextField(
-              controller: descriptionController,
-              decoration: const InputDecoration(
-                labelText: 'Descripción (opcional)',
-                hintText: 'Ej: Canciones para el gimnasio',
-              ),
-              maxLines: 2,
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cancelar'),
-          ),
-          TextButton(
-            onPressed: () async {
-              final name = nameController.text.trim();
-              if (name.isNotEmpty) {
-                final description = descriptionController.text.trim().isNotEmpty
-                    ? descriptionController.text.trim()
-                    : null;
-                
-                Navigator.pop(context);
-                
-                final playlist = await PlaylistService.createPlaylist(
-                  name, 
-                  description: description,
-                );
-                
-                await PlaylistService.addSongToPlaylist(playlist.id, video);
-                
-                if (!context.mounted) return;
-                 ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(
-                    content: Text('${video.title} añadida a $name'),
-                  ),
-                );
-              }
-            },
-            child: const Text('Crear'),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-// Clase correcta del buscador
-class SongSearchDelegate extends SearchDelegate<String> {
-  final YouTubeApiService _apiService = YouTubeApiService();
-  final AudioService _audioService = AudioService();
+  // Reemplazar YouTubeApiService por MusicProvider
+  final MusicProvider _musicProvider = MusicProvider();
   final AudioPlayer _audioPlayer;
   final Function(String) onThumbnailSelected;
   final Function(bool) onPlayStateChanged;
   final Function(YouTubeVideo)? onSongSelected;
   
-  // Lista para almacenar el historial de búsquedas
   List<String> _searchHistory = [];
   
+  // Constructor igual
   SongSearchDelegate({
     required this.onThumbnailSelected,
     required this.onPlayStateChanged,
     required AudioPlayer audioPlayer,
     this.onSongSelected,
   }) : _audioPlayer = audioPlayer {
-    // Cargar el historial cuando se crea el delegado
     _loadSearchHistory();
   }
   
@@ -829,19 +282,6 @@ class SongSearchDelegate extends SearchDelegate<String> {
     await prefs.setStringList('search_history', _searchHistory);
   }
   
-  // Método para eliminar una búsqueda del historial
-  Future<void> _removeFromHistory(String query) async {
-    final prefs = await SharedPreferences.getInstance();
-    
-    _searchHistory.remove(query);
-    
-    // Guardar en SharedPreferences
-    await prefs.setStringList('search_history', _searchHistory);
-    
-    // Forzar reconstrucción
-    this.query = this.query;
-  }
-
   @override
   List<Widget>? buildActions(BuildContext context) {
     return [
@@ -866,154 +306,266 @@ class SongSearchDelegate extends SearchDelegate<String> {
 
   @override
   Widget buildResults(BuildContext context) {
-    // Guardar la consulta en el historial cuando se busca
     _saveSearch(query);
     
     return FutureBuilder<List<YouTubeVideo>>(
-      future: _apiService.searchVideos(query),
+      // Reemplazar _apiService.searchVideos por _musicProvider.searchSongs
+      future: _musicProvider.searchSongs(query),
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
-          return const Center(child: CircularProgressIndicator());
+          return const Center(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                CircularProgressIndicator(),
+                SizedBox(height: 16),
+                Text('Buscando en múltiples fuentes...')
+              ],
+            )
+          );
         } else if (snapshot.hasError) {
-          return Center(child: Text('Error: ${snapshot.error}'));
-        } else if (!snapshot.hasData || snapshot.data!.isEmpty) {
-          return const Center(child: Text('No se encontraron resultados.'));
-        } else {
-          final videos = snapshot.data!;
-          return ListView.builder(
-            itemCount: videos.length,
-            itemBuilder: (context, index) {
-              final video = videos[index];
-              return ListTile(
-                leading: Image.network(video.thumbnailUrl),
-                title: Text(
-                  video.title,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-                subtitle: Text(video.channelTitle),
-                trailing: IconButton(
-                  icon: const Icon(Icons.more_vert),
+          return Center(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(Icons.error_outline, size: 48, color: Colors.red),
+                SizedBox(height: 16),
+                Text('Error al conectar con el servidor: ${snapshot.error}'),
+                SizedBox(height: 16),
+                ElevatedButton.icon(
+                  icon: const Icon(Icons.refresh),
+                  label: const Text('Reintentar'),
                   onPressed: () {
-                    _showSongOptions(context, video);
+                    showResults(context);
                   },
                 ),
-                onTap: () async {
-                  try {
-                    // Actualizar la UI ANTES de iniciar la carga del audio
-                    onThumbnailSelected(video.thumbnailUrl);
-                    onSongSelected?.call(video);
-                    
-                    // Mostrar indicador de carga
-                    if (context.mounted) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text('Cargando audio...')),
-                      );
-                    }
-                    
-                    // Obtener URL del audio
-                    final audioUrl = await _audioService.getAudioUrl(video.videoId);
-                    
-                    // Intentar usar reproducción con background
-                    try {
-                      final mediaItem = MediaItem(
-                        id: video.videoId,
-                        title: video.title,
-                        artist: video.channelTitle,
-                        artUri: Uri.parse(video.thumbnailUrl),
-                        displayTitle: video.title,
-                        displaySubtitle: video.channelTitle,
-                      );
-                      
-                      await _audioPlayer.setAudioSource(
-                        AudioSource.uri(
-                          Uri.parse(audioUrl),
-                          tag: mediaItem,
-                        ),
-                      );
-                    } catch (e) {
-                      // Si falla, usar reproducción simple
-                      if (kDebugMode) {
-                        print('Fallback a reproducción simple: $e');
+                SizedBox(height: 8),
+                // Botón para buscar en modo offline
+                TextButton.icon(
+                  icon: const Icon(Icons.offline_bolt),
+                  label: const Text('Usar datos guardados'),
+                  onPressed: () {
+                    _musicProvider.setOfflineMode(true);
+                    showResults(context);
+                  },
+                ),
+              ],
+            ),
+          );
+        } else if (!snapshot.hasData || snapshot.data!.isEmpty) {
+          return Center(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                const Icon(Icons.search_off, size: 48, color: Colors.grey),
+                const SizedBox(height: 16),
+                const Text('No se encontraron resultados'),
+                const SizedBox(height: 16),
+                
+                // Opción para buscar en caché
+                if (!_musicProvider.isOfflineMode)
+                  TextButton.icon(
+                    icon: const Icon(Icons.history),
+                    label: const Text('Ver resultados guardados'),
+                    onPressed: () async {
+                      // Buscar en caché
+                      final cachedResults = await OfflineModeService.getSearchResults(query);
+                      if (cachedResults.isNotEmpty) {
+                        _musicProvider.setOfflineMode(true);
+                        showResults(context);
+                        // Volver al modo online después
+                        Future.delayed(const Duration(seconds: 2), () {
+                          _musicProvider.setOfflineMode(false);
+                        });
+                      } else {
+                        if (context.mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(content: Text('No hay resultados guardados para esta búsqueda'))
+                          );
+                        }
                       }
-                      await _audioPlayer.setUrl(audioUrl);
-                    }
-                    
-                    // Iniciar reproducción
-                    await _audioPlayer.play();
-                    
-                    // Actualizar estado
-                    onPlayStateChanged(true);
-                    
-                    if (context.mounted) {
-                      // Cerrar la búsqueda ANTES del SnackBar
-                      Navigator.pop(context);
-                      
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(content: Text('Reproduciendo: ${video.title}')),
-                      );
-                    }
-                  } catch (e) {
-                    if (kDebugMode) {
-                      print('Error detallado: $e');
-                    }
-                    if (context.mounted) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(
-                          content: Text('Error al reproducir audio: $e'),
-                          duration: const Duration(seconds: 5),
+                    },
+                  ),
+                
+                // Botón para reintentar
+                ElevatedButton.icon(
+                  icon: const Icon(Icons.refresh),
+                  label: const Text('Reintentar'),
+                  onPressed: () {
+                    showResults(context);
+                  },
+                ),
+              ],
+            ),
+          );
+        } else {
+          final videos = snapshot.data!;
+          
+          // Guardar en caché offline si no estamos en modo offline
+          if (!_musicProvider.isOfflineMode) {
+            OfflineModeService.saveRecentSearch(query, videos);
+          }
+          
+          return Column(
+            children: [
+              // Indicador de fuente de datos
+              Container(
+                padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 16),
+                color: Colors.black54,
+                child: Row(
+                  children: [
+                    Icon(
+                      _musicProvider.isOfflineMode 
+                          ? Icons.offline_bolt 
+                          : Icons.cloud_done,
+                      size: 16,
+                    ),
+                    const SizedBox(width: 8),
+                    Text(
+                      _musicProvider.isOfflineMode
+                          ? 'Modo offline (datos almacenados)'
+                          : 'Conectado a servidor local',
+                      style: const TextStyle(fontSize: 12),
+                    ),
+                    const Spacer(),
+                    // Botón para alternar modo offline
+                    TextButton.icon(
+                      icon: Icon(
+                        _musicProvider.isOfflineMode ? Icons.cloud : Icons.offline_bolt,
+                        size: 16
+                      ),
+                      label: Text(
+                        _musicProvider.isOfflineMode ? 'Conectar' : 'Modo offline',
+                        style: const TextStyle(fontSize: 12),
+                      ),
+                      style: TextButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(horizontal: 8),
+                        minimumSize: Size.zero,
+                      ),
+                      onPressed: () {
+                        _musicProvider.setOfflineMode(!_musicProvider.isOfflineMode);
+                        showResults(context);
+                      },
+                    ),
+                  ],
+                ),
+              ),
+              // Lista de videos
+              Expanded(
+                child: ListView.builder(
+                  itemCount: videos.length,
+                  itemBuilder: (context, index) {
+                    final video = videos[index];
+                    return ListTile(
+                      leading: Container(
+                        width: 60, 
+                        height: 45,
+                        decoration: BoxDecoration(
+                          color: Colors.grey[800],
+                          borderRadius: BorderRadius.circular(4),
+                          image: DecorationImage(
+                            image: NetworkImage(video.thumbnailUrl),
+                            fit: BoxFit.cover,
+                            onError: (_, __) {
+                              // No necesitamos manejar el error aquí
+                            },
+                          ),
                         ),
-                      );
-                    }
-                  }
-                },
-              );
-            },
+                      ),
+                      title: Text(
+                        video.title,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      subtitle: Text(video.channelTitle),
+                      trailing: IconButton(
+                        icon: const Icon(Icons.more_vert),
+                        onPressed: () {
+                          _showSongOptions(context, video);
+                        },
+                      ),
+                      onTap: () async {
+                        try {
+                          // Obtener instancia del manager
+                          final playerManager = AudioPlayerManager();
+                          
+                          // Mostrar indicador de carga
+                          if (context.mounted) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(content: Text('Cargando audio...')),
+                            );
+                          }
+                          
+                          // Actualizar datos visuales inmediatamente
+                          playerManager.setCurrentSong(video);
+                          playerManager.setThumbnail(video.thumbnailUrl);
+                          
+                          // Obtener URL del audio usando MusicProvider
+                          final audioUrl = await _musicProvider.getAudioUrl(video.videoId);
+                          
+                          // Crear MediaItem para just_audio_background
+                          final mediaItem = MediaItem(
+                            id: video.videoId,
+                            title: video.title,
+                            artist: video.channelTitle,
+                            artUri: Uri.parse(video.thumbnailUrl),
+                            displayTitle: video.title,
+                            displaySubtitle: video.channelTitle,
+                          );
+                          
+                          // Usar el método correcto
+                          // Opción 1: Usar playSafe que toma una URL y un MediaItem
+                          await playerManager.playSong(context, video);
+                          
+                          // O Opción 2: Si playSong existe y toma estos parámetros
+                          // await playerManager.playSong(context, video);
+                          
+                          // Notificar cambio de estado de reproducción
+                          playerManager.setPlayState(true);
+                          
+                          if (context.mounted) {
+                            // Cerrar la búsqueda
+                            Navigator.pop(context);
+                            
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(content: Text('Reproduciendo: ${video.title}')),
+                            );
+                          }
+                          
+                          // Cargar canciones relacionadas
+                          playerManager.loadRelatedSongs(video.videoId);
+                        } catch (e) {
+                          // Manejo de errores...
+                          if (kDebugMode) {
+                            print('Error al reproducir: $e');
+                          }
+                          
+                          if (context.mounted) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(
+                                content: Text('Error al conectar con el servidor. Intentando usar caché...'),
+                                duration: const Duration(seconds: 2),
+                              ),
+                            );
+                            
+                            // Intentar modo offline como fallback
+                            _musicProvider.setOfflineMode(true);
+                            showResults(context);
+                          }
+                        }
+                      },
+                    );
+                  },
+                ),
+              ),
+            ],
           );
         }
       },
     );
   }
-
-  @override
-  Widget buildSuggestions(BuildContext context) {
-    // Mostrar el historial de búsquedas
-    if (_searchHistory.isEmpty) {
-      return const Center(
-        child: Text('No hay búsquedas recientes'),
-      );
-    }
-    
-    return ListView.builder(
-      itemCount: _searchHistory.length,
-      itemBuilder: (context, index) {
-        final historyItem = _searchHistory[index];
-        return ListTile(
-          leading: const Icon(Icons.history),
-          title: Text(historyItem),
-          trailing: IconButton(
-            icon: const Icon(Icons.close),
-            onPressed: () {
-              _removeFromHistory(historyItem);
-            },
-          ),
-          onTap: () {
-            // Usar la búsqueda del historial
-            query = historyItem;
-            showResults(context);
-          },
-        );
-      },
-    );
-  }
-
-  @override
-  void close(BuildContext context, String result) {
-    // No disponemos del _audioPlayer aquí, ya que lo gestiona HomeScreen
-    _audioService.dispose();
-    super.close(context, result);
-  }
-
+  
+  // También actualizar el método _showSongOptions para usar MusicProvider
   void _showSongOptions(BuildContext context, YouTubeVideo video) {
     showModalBottomSheet(
       context: context,
@@ -1027,14 +579,22 @@ class SongSearchDelegate extends SearchDelegate<String> {
               onTap: () async {
                 Navigator.pop(context);
                 try {
+                  // Obtener instancia del manager
+                  final playerManager = AudioPlayerManager();
+                  
                   // Mostrar indicador de carga
                   ScaffoldMessenger.of(context).showSnackBar(
                     const SnackBar(content: Text('Cargando audio...')),
                   );
                   
-                  final audioUrl = await _audioService.getAudioUrl(video.videoId);
+                  // Actualizar datos visuales inmediatamente
+                  playerManager.setCurrentSong(video);
+                  playerManager.setThumbnail(video.thumbnailUrl);
                   
-                  // Crear MediaItem para reproducción en segundo plano
+                  // Usar MusicProvider para obtener URL
+                  final audioUrl = await _musicProvider.getAudioUrl(video.videoId);
+                  
+                  // Usar el método seguro de reproducción
                   final mediaItem = MediaItem(
                     id: video.videoId,
                     title: video.title,
@@ -1044,31 +604,42 @@ class SongSearchDelegate extends SearchDelegate<String> {
                     displaySubtitle: video.channelTitle,
                   );
                   
-                  // Usar setAudioSource con MediaItem
-                  await _audioPlayer.setAudioSource(
-                    AudioSource.uri(
-                      Uri.parse(audioUrl),
-                      tag: mediaItem,
-                    ),
-                  );
+                  // Reproducción segura con manejo de errores integrado
+                  await playerManager.playSong(context, video);
                   
-                  await _audioPlayer.play();
+                  // Notificar cambio de estado de reproducción
+                  playerManager.setPlayState(true);
                   
-                  onPlayStateChanged(true);
-                  onThumbnailSelected(video.thumbnailUrl);
-                  onSongSelected?.call(video);
+                  if (context.mounted) {
+                    // Cerrar la búsqueda
+                    Navigator.pop(context);
+                    
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(content: Text('Reproduciendo: ${video.title}')),
+                    );
+                  }
                   
-                  if (!context.mounted) return;
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(content: Text('Reproduciendo: ${video.title}')),
-                  );
+                  // Cargar canciones relacionadas
+                  playerManager.loadRelatedSongs(video.videoId);
                 } catch (e) {
+                  // Manejo de errores...
                   if (kDebugMode) {
                     print('Error al reproducir: $e');
                   }
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(content: Text('Error al reproducir: $e')),
-                  );
+                  
+                  if (context.mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text('Error al reproducir. Intentando usar datos guardados...'),
+                        duration: const Duration(seconds: 2),
+                      ),
+                    );
+                    
+                    // Intentar modo offline como fallback
+                    _musicProvider.setOfflineMode(true);
+                    
+                    // No reintentar automáticamente para evitar bucles
+                  }
                 }
               },
             ),
@@ -1250,5 +821,28 @@ class SongSearchDelegate extends SearchDelegate<String> {
         ],
       ),
     );
+  }
+
+  // Añadir este método a SongSearchDelegate
+  Future<String> _getFallbackAudioUrl(String videoId) async {
+    try {
+      // Intentar obtener la URL desde una fuente diferente
+      final response = await http.get(
+        Uri.parse('https://pipedapi.kavin.rocks/streams/$videoId')
+      );
+      
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        final audioStreams = data['audioStreams'] as List;
+        
+        if (audioStreams.isNotEmpty) {
+          return audioStreams.first['url'];
+        }
+      }
+      
+      return '';
+    } catch (e) {
+      return '';
+    }
   }
 }

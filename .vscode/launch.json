@@ -6,18 +6,18 @@
     "configurations": [
         
         {
-            "name": "SoundSwarm",
+            "name": "SonicSwap",
             "request": "launch",
             "type": "dart"
         },
         {
-            "name": "SoundSwarm (profile mode)",
+            "name": "SoSonicSwapundSwarm (profile mode)",
             "request": "launch",
             "type": "dart",
             "flutterMode": "profile"
         },
         {
-            "name": "SoundSwarm (release mode)",
+            "name": "SonicSwap (release mode)",
             "request": "launch",
             "type": "dart",
             "flutterMode": "release"

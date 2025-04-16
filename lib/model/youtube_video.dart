@@ -4,7 +4,6 @@ class YouTubeVideo {
   final String description;
   final String thumbnailUrl;
   final String channelTitle;
-  final String publishedAt;
 
   YouTubeVideo({
     required this.videoId,
@@ -12,7 +11,6 @@ class YouTubeVideo {
     required this.description,
     required this.thumbnailUrl,
     required this.channelTitle,
-    required this.publishedAt,
   });
 
   // Método toJson correcto (cambiar de factory a método de instancia)
@@ -21,8 +19,7 @@ class YouTubeVideo {
     'title': title,
     'description': description,
     'thumbnailUrl': thumbnailUrl,
-    'channelTitle': channelTitle,
-    'publishedAt': publishedAt,
+    'channelTitle': channelTitle
   };
 
   factory YouTubeVideo.fromJson(Map<String, dynamic> json) {
@@ -40,7 +37,6 @@ class YouTubeVideo {
         description: '',
         thumbnailUrl: '',
         channelTitle: '',
-        publishedAt: '',
       );
     }
     
@@ -65,7 +61,6 @@ class YouTubeVideo {
       description: snippet['description'] ?? '',
       thumbnailUrl: thumbnailUrl,
       channelTitle: snippet['channelTitle'] ?? '',
-      publishedAt: snippet['publishedAt'] ?? '',
     );
   }
 }
