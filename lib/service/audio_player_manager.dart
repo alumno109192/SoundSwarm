@@ -623,4 +623,64 @@ class AudioPlayerManager extends ChangeNotifier {
       }
     }
   }
+
+ // Añade este método a la clase _PlaylistDetailScreenState
+
+// Método para reproducir todas las canciones
+Future<void> playAllSongs(BuildContext context, dynamic playlist, ) async {
+  if (playlist.songs.isEmpty) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('La playlist está vacía')),
+    );
+    return;
+  }
+  
+  try {
+    // Mostrar indicador de carga
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Cargando playlist...')),
+    );
+    
+    // Reproducir la primera canción
+    await playSong(context, playlist.songs[0]);
+    
+    // Cargar todas las canciones en la lista de reproducción
+    AudioPlayerManager().loadPlaylist(playlist.songs);
+    
+    // Notificar al usuario
+    if (context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Reproduciendo: ${playlist.name}')),
+      );
+    }
+  } catch (e) {
+    if (kDebugMode) {
+      print('Error al reproducir la playlist: $e');
+    }
+    
+    if (context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error al reproducir la playlist: $e')),
+      );
+    }
+  }
+}
+
+/// Carga una lista completa de canciones para reproducción
+void loadPlaylist(List<YouTubeVideo> songs) {
+  if (songs.isEmpty) return;
+  
+  // Guardar la lista de canciones como relacionadas
+  _relatedSongs = List.from(songs);
+  
+  // Establecer el índice a 0 (primera canción)
+  _currentSongIndex = 0;
+  
+  if (kDebugMode) {
+    print('Playlist cargada con ${songs.length} canciones');
+  }
+  
+  // Notificar cambios
+  notifyListeners();
+}
 }

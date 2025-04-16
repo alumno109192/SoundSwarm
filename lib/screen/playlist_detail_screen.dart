@@ -101,48 +101,140 @@ class _PlaylistDetailScreenState extends State<PlaylistDetailScreen> {
       );
     }
 
-    return ListView.builder(
-      itemCount: _playlist!.songs.length,
-      itemBuilder: (context, index) {
-        final song = _playlist!.songs[index];
-        return ListTile(
-          leading: Container(
-            width: 60,
-            height: 60,
-            decoration: BoxDecoration(
-              color: Colors.grey[800],
-              borderRadius: BorderRadius.circular(4),
-              image: song.thumbnailUrl.isNotEmpty
-                  ? DecorationImage(
-                      image: NetworkImage(song.thumbnailUrl),
-                      fit: BoxFit.cover,
-                    )
-                  : null,
+    return Column(
+      children: [
+        // Añade este widget después del AppBar y antes del botón de reproducir todo
+
+        // Encabezado con estadísticas de la playlist
+        Container(
+          padding: const EdgeInsets.all(16.0),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Nombre y descripción de la playlist
+              Text(
+                _playlist!.name,
+                style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                  fontWeight: FontWeight.bold
+                ),
+              ),
+              if (_playlist!.description != null && _playlist!.description!.isNotEmpty)
+                Padding(
+                  padding: const EdgeInsets.only(top: 4.0),
+                  child: Text(
+                    _playlist!.description!,
+                    style: Theme.of(context).textTheme.bodyMedium,
+                  ),
+                ),
+              
+              // Estadísticas de la playlist
+              Padding(
+                padding: const EdgeInsets.only(top: 8.0),
+                child: Row(
+                  children: [
+                    Text(
+                      '${_playlist!.songs.length} canciones',
+                      style: Theme.of(context).textTheme.bodySmall,
+                    ),
+                    const SizedBox(width: 16),
+                    Text(
+                      'Creada: ${_formatDate(_playlist!.createdAt)}',
+                      style: Theme.of(context).textTheme.bodySmall,
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
+          child: Card(
+            elevation: 2.0,
+            color: Theme.of(context).colorScheme.primaryContainer,
+            child: InkWell(
+              onTap: _playlist!.songs.isEmpty 
+                  ? null 
+                  : () => _playAllSongs(),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 16.0, horizontal: 8.0),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Row(
+                      children: [
+                        const Icon(Icons.play_circle_filled, size: 38),
+                        const SizedBox(width: 16),
+                        Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Reproducir todo',
+                              style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                                fontWeight: FontWeight.bold
+                              ),
+                            ),
+                            Text(
+                              '${_playlist!.songs.length} canciones',
+                              style: Theme.of(context).textTheme.bodySmall,
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                    const Icon(Icons.arrow_forward),
+                  ],
+                ),
+              ),
             ),
-            child: song.thumbnailUrl.isEmpty
-                ? const Icon(Icons.music_note, color: Colors.white)
-                : null,
           ),
-          title: Text(
-            song.title,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
+        ),
+        Expanded(
+          child: ListView.builder(
+            itemCount: _playlist!.songs.length,
+            itemBuilder: (context, index) {
+              final song = _playlist!.songs[index];
+              return ListTile(
+                leading: Container(
+                  width: 60,
+                  height: 60,
+                  decoration: BoxDecoration(
+                    color: Colors.grey[800],
+                    borderRadius: BorderRadius.circular(4),
+                    image: song.thumbnailUrl.isNotEmpty
+                        ? DecorationImage(
+                            image: NetworkImage(song.thumbnailUrl),
+                            fit: BoxFit.cover,
+                          )
+                        : null,
+                  ),
+                  child: song.thumbnailUrl.isEmpty
+                      ? const Icon(Icons.music_note, color: Colors.white)
+                      : null,
+                ),
+                title: Text(
+                  song.title,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                subtitle: Text(
+                  song.channelTitle,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                trailing: IconButton(
+                  icon: const Icon(Icons.more_vert),
+                  onPressed: () => _showSongOptions(song),
+                ),
+                onTap: () {
+                  // Reproducir la canción en el reproductor principal
+                  _playSong(song);
+                },
+              );
+            },
           ),
-          subtitle: Text(
-            song.channelTitle,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-          ),
-          trailing: IconButton(
-            icon: const Icon(Icons.more_vert),
-            onPressed: () => _showSongOptions(song),
-          ),
-          onTap: () {
-            // Reproducir la canción en el reproductor principal
-            _playSong(song);
-          },
-        );
-      },
+        ),
+      ],
     );
   }
 
@@ -217,5 +309,23 @@ class _PlaylistDetailScreenState extends State<PlaylistDetailScreen> {
         SnackBar(content: Text('Error al reproducir: $e')),
       );
     }
+  }
+
+  void _playAllSongs() {
+    try {
+      final playerManager = AudioPlayerManager();
+      playerManager.playAllSongs(context, _playlist!.songs);
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error al reproducir todas las canciones: $e')),
+      );
+    }
+  }
+
+  // Añade este método a la clase _PlaylistDetailScreenState
+
+  // Método para formatear fechas
+  String _formatDate(DateTime date) {
+    return '${date.day}/${date.month}/${date.year}';
   }
 }
