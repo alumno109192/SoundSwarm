@@ -1,15 +1,14 @@
 import 'dart:async';
-
+import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:just_audio_background/just_audio_background.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:soundswarm/model/playlist.dart';
 import 'package:soundswarm/model/youtube_video.dart';
 import 'package:soundswarm/service/audio_service.dart';
-import 'package:soundswarm/service/playlist_service.dart'; // Add this import
-import 'package:shared_preferences/shared_preferences.dart';
-import 'dart:convert';
+import 'package:soundswarm/service/playlist_service.dart';
 import 'package:soundswarm/service/recent_songs_service.dart';
 
 class AudioPlayerManager extends ChangeNotifier {
@@ -20,51 +19,25 @@ class AudioPlayerManager extends ChangeNotifier {
     _initializePlayer();
   }
 
-  // AudioPlayer con inicialización segura
+  // Variables privadas
   late AudioPlayer _audioPlayer;
   bool _isInitialized = false;
+  bool _isPlaying = false;
+  String? _currentThumbnailUrl;
+  YouTubeVideo? _currentSong;
+  List<YouTubeVideo> _relatedSongs = [];
+  int _currentSongIndex = 0;
+  Duration _position = Duration.zero;
+  Duration _duration = Duration.zero;
   
-  // Métodos para verificar y esperar inicialización
+  // Getters
   bool get isInitialized => _isInitialized;
-  
-  Future<void> _initializePlayer() async {
-    try {
-      _audioPlayer = AudioPlayer();
-      _setupAudioPlayerListeners();
-      _isInitialized = true;
-      if (kDebugMode) {
-        print('AudioPlayer inicializado correctamente');
-      }
-      _loadFromCache(); // Cargar canción de la caché al iniciar
-    } catch (e) {
-      if (kDebugMode) {
-        print('Error al inicializar AudioPlayer: $e');
-      }
-      // Reintentar inicialización después de un retraso
-      Future.delayed(const Duration(seconds: 1), _initializePlayer);
-    }
-  }
-
-  // Getter para el audioPlayer
   AudioPlayer get audioPlayer {
     if (!_isInitialized) {
       throw Exception('AudioPlayer no inicializado correctamente');
     }
     return _audioPlayer;
   }
-
-  // Variables privadas
-  bool _isPlaying = false;
-  String? _currentThumbnailUrl;
-  YouTubeVideo? _currentSong;
-  List<YouTubeVideo> _relatedSongs = [];
-  int _currentSongIndex = 0;
-  
-  // Duration tracking for UI
-  Duration _position = Duration.zero;
-  Duration _duration = Duration.zero;
-  
-  // Getters
   bool get isPlaying => _isPlaying;
   String? get currentThumbnailUrl => _currentThumbnailUrl;
   YouTubeVideo? get currentSong => _currentSong;
@@ -76,73 +49,69 @@ class AudioPlayerManager extends ChangeNotifier {
   Function(YouTubeVideo? song)? onSongChanged;
   Function(bool isPlaying)? onPlayStateChanged;
   
+  // Inicialización del reproductor
+  Future<void> _initializePlayer() async {
+    try {
+      _audioPlayer = AudioPlayer();
+      _setupAudioPlayerListeners();
+      _isInitialized = true;
+      if (kDebugMode) {
+        print('AudioPlayer inicializado correctamente');
+      }
+      _loadFromCache();
+    } catch (e) {
+      if (kDebugMode) {
+        print('Error al inicializar AudioPlayer: $e');
+      }
+      Future.delayed(const Duration(seconds: 1), _initializePlayer);
+    }
+  }
+  
+  // Configurar listeners del reproductor
   void _setupAudioPlayerListeners() {
     _audioPlayer.playerStateStream.listen((state) {
       if (state.processingState == ProcessingState.completed) {
-        if (_relatedSongs.isNotEmpty && _currentSongIndex < _relatedSongs.length - 1) {
-          playNextSong();
-        }
+        playNextSong();
       }
       
-      // Update the playing state
       _isPlaying = state.playing;
-      if (onPlayStateChanged != null) {
-        onPlayStateChanged!(_isPlaying);
-      }
+      onPlayStateChanged?.call(_isPlaying);
     });
     
     _audioPlayer.positionStream.listen((position) {
       _position = position;
-      
-      // Guardar la posición periódicamente (cada 5 segundos)
       if (position.inSeconds % 5 == 0) {
         _saveToCache();
       }
-      
       notifyListeners();
     });
     
     _audioPlayer.durationStream.listen((duration) {
-      _duration = duration != null 
-          ? Duration(seconds: (duration.inSeconds / 2).round()) 
-          : Duration.zero;
-    });
-    
-    _audioPlayer.playingStream.listen((isPlaying) {
-      _isPlaying = isPlaying;
-      if (onPlayStateChanged != null) {
-        onPlayStateChanged!(_isPlaying);
-      }
+      _duration = duration ?? Duration.zero;
+      notifyListeners();
     });
   }
-  
-  /// Método para reproducir una canción
+
+  // MÉTODO PRINCIPAL DE REPRODUCCIÓN - SIMPLIFICADO
   Future<void> playSong(BuildContext context, YouTubeVideo video) async {
     try {
-      // Mostrar indicador de carga
-      if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Cargando: ${video.title}...')),
-        );
-      }
-      
       // Actualizar estado
       _currentSong = video;
       _currentThumbnailUrl = video.thumbnailUrl;
       
-      // Notificar a la UI
-      if (onSongChanged != null) {
-        onSongChanged!(video);
-      }
+      // Notificar UI
+      onSongChanged?.call(video);
+      onThumbnailChanged?.call(video.thumbnailUrl);
       
-      if (onThumbnailChanged != null) {
-        onThumbnailChanged!(video.thumbnailUrl);
-      }
-      
-      // Guardar en caché inmediatamente
+      // Guardar en caché y historial
       _saveToCache();
+      try {
+        RecentSongsService.addRecentSong(video);
+      } catch (e) {
+        // Ignorar errores no críticos
+      }
       
-      // Obtener URL del audio (usar tu servicio FastAPI)
+      // Obtener URL de audio
       final audioService = AudioService();
       final audioUrl = await audioService.getAudioUrl(video.videoId);
       
@@ -150,172 +119,132 @@ class AudioPlayerManager extends ChangeNotifier {
         print('URL de audio obtenida: $audioUrl');
       }
       
-      // Crear MediaItem (obligatorio para just_audio_background)
+      // Detener reproducción actual
+      await _audioPlayer.stop();
+      
+      // Crear MediaItem y reproducir
       final mediaItem = MediaItem(
         id: video.videoId,
         title: video.title,
         artist: video.channelTitle,
         artUri: Uri.parse(video.thumbnailUrl),
-        displayTitle: video.title,
-        displaySubtitle: video.channelTitle,
       );
       
-      // Detener cualquier reproducción actual
-      await _audioPlayer.stop();
-      
-      // Establecer la fuente de audio
       try {
+        // Método principal
         await _audioPlayer.setAudioSource(
-          AudioSource.uri(
-            Uri.parse(audioUrl),
-            tag: mediaItem, // El tag es obligatorio para just_audio_background
-          ),
+          AudioSource.uri(Uri.parse(audioUrl), tag: mediaItem)
         );
-        
-        // Iniciar reproducción
         await _audioPlayer.play();
-        
-        // Actualizar estado de reproducción
         _isPlaying = true;
-        if (onPlayStateChanged != null) {
-          onPlayStateChanged!(true);
-        }
-        
-        // Cargar canciones relacionadas en segundo plano
-        loadRelatedSongs(video.videoId);
-        
-        // Mostrar mensaje de éxito
-        if (context.mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Reproduciendo: ${video.title}')),
-          );
-        }
-        
+        onPlayStateChanged?.call(true);
       } catch (e) {
         if (kDebugMode) {
           print('Error al reproducir audio: $e');
+          print('Intentando método alternativo...');
         }
         
-        // Intento alternativo más básico
+        // Método alternativo más simple
         try {
-          if (kDebugMode) {
-            print('Intentando método alternativo...');
-          }
-          
-          // Volver a intentar con setUrl directo 
-          // (aún necesitamos proporcionar MediaItem por separado)
           await _audioPlayer.setUrl(audioUrl);
-          
-          // Al usar setUrl con just_audio_background, hay que proporcionar metadata manualmente
-          // La clase AudioHandler no está disponible directamente, así que usamos esta alternativa
           await _audioPlayer.play();
-          
-          // Actualizar estado de reproducción
           _isPlaying = true;
-          if (onPlayStateChanged != null) {
-            onPlayStateChanged!(true);
-          }
-          
+          onPlayStateChanged?.call(true);
         } catch (e2) {
           if (kDebugMode) {
             print('Error en reproducción alternativa: $e2');
           }
-          
           if (context.mounted) {
             ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(content: Text('No se pudo reproducir el audio')),
+              SnackBar(content: Text('No se pudo reproducir el audio'))
             );
           }
-          
-          rethrow;
+          throw e2;
         }
       }
       
-      // Limpiar recursos del servicio
-      audioService.dispose();
+      // Cargar canciones relacionadas (mínimo)
+      if (_relatedSongs.isEmpty) {
+        _relatedSongs = [video]; // Al menos incluir la canción actual
+        _currentSongIndex = 0;
+      }
       
-      // Guardar canción como reproducida recientemente
-      await RecentSongsService.addRecentSong(video);
+      // Mostrar mensaje de éxito
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Reproduciendo: ${video.title}'))
+        );
+      }
+      
+      // Limpiar recursos
+      audioService.dispose();
       
     } catch (e) {
       if (kDebugMode) {
         print('Error general en playSong: $e');
       }
-      
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error: $e')),
+          SnackBar(content: Text('Error: ${e.toString().substring(0, 100)}...'))
         );
       }
     }
   }
-  
+
+  // Método básico para simular canciones relacionadas
   Future<void> loadRelatedSongs(String videoId) async {
     try {
-      if (videoId.isEmpty) {
-        if (kDebugMode) {
-          print('ID de video vacío, no se pueden cargar canciones relacionadas');
+      if (videoId.isEmpty) return;
+      
+      // Si tenemos una canción actual, asegurarnos de incluirla
+      if (_currentSong != null) {
+        if (_relatedSongs.isEmpty) {
+          _relatedSongs = [_currentSong!];
+          _currentSongIndex = 0;
         }
-        return;
       }
       
-      // Notificar a los oyentes si usas ChangeNotifier
       notifyListeners();
     } catch (e) {
       if (kDebugMode) {
         print('Error al cargar canciones relacionadas: $e');
       }
+      _relatedSongs = _currentSong != null ? [_currentSong!] : [];
     }
   }
   
+  // Reproducir siguiente canción - SIMPLIFICADO
   Future<void> playNextSong() async {
-    if (_relatedSongs.isEmpty || _currentSongIndex >= _relatedSongs.length - 1) {
-      if (_currentSong != null) {
-        await loadRelatedSongs(_currentSong!.videoId);
-      }
-      
-      if (_relatedSongs.isEmpty) {
-        return;
-      }
+    if (_relatedSongs.isEmpty || _currentSong == null) return;
+    
+    // Si tenemos relatedSongs pero estamos al final, reiniciar
+    if (_currentSongIndex >= _relatedSongs.length - 1) {
+      _currentSongIndex = -1; // Así incrementando quedará en 0
     }
     
     _currentSongIndex++;
     if (_currentSongIndex < _relatedSongs.length) {
       final nextVideo = _relatedSongs[_currentSongIndex];
       
-      // No usamos playSong porque necesitaríamos context
-      // En su lugar, actualizamos estado y reproducimos directamente
+      // Actualizar UI
+      _currentSong = nextVideo;
+      _currentThumbnailUrl = nextVideo.thumbnailUrl;
+      onSongChanged?.call(nextVideo);
+      onThumbnailChanged?.call(nextVideo.thumbnailUrl);
+      
       try {
+        // Obtener URL
         final audioService = AudioService();
-        
-        // Actualizar estado
-        _currentSong = nextVideo;
-        _currentThumbnailUrl = nextVideo.thumbnailUrl;
-        
-        // Guardar en caché
-        _saveToCache();
-        
-        // Notificar a la UI
-        if (onSongChanged != null) {
-          onSongChanged!(nextVideo);
-        }
-        
-        if (onThumbnailChanged != null) {
-          onThumbnailChanged!(nextVideo.thumbnailUrl);
-        }
-        
-        // Obtener URL del audio
+        final audioUrl = await audioService.getAudioUrl(nextVideo.videoId);
         
         // Reproducir
-        try {
-          
-        } catch (e) {
-          if (kDebugMode) {
-            print('Error con background playback: $e');
-          }
-        }
+        await _audioPlayer.stop();
+        await _audioPlayer.setUrl(audioUrl);
+        await _audioPlayer.play();
         
-        // Limpiar recursos
+        _isPlaying = true;
+        onPlayStateChanged?.call(true);
+        
         audioService.dispose();
       } catch (e) {
         if (kDebugMode) {
@@ -325,63 +254,47 @@ class AudioPlayerManager extends ChangeNotifier {
     }
   }
   
+  // Reproducir canción anterior - SIMPLIFICADO
   Future<void> playPreviousSong() async {
-    if (_relatedSongs.isEmpty || _currentSongIndex <= 0) {
-      if (_currentSongIndex == 0 && _relatedSongs.isNotEmpty) {
-        await _audioPlayer.seek(Duration.zero);
-        return;
-      }
-      
+    if (_relatedSongs.isEmpty || _currentSong == null) return;
+    
+    // Si estamos al inicio o cerca, simplemente reiniciar la canción actual
+    if (_currentSongIndex <= 0 || _position.inSeconds > 3) {
+      await _audioPlayer.seek(Duration.zero);
       return;
     }
     
     _currentSongIndex--;
-    if (_currentSongIndex >= 0) {
-      final previousVideo = _relatedSongs[_currentSongIndex];
+    final previousVideo = _relatedSongs[_currentSongIndex];
+    
+    // Actualizar UI
+    _currentSong = previousVideo;
+    _currentThumbnailUrl = previousVideo.thumbnailUrl;
+    onSongChanged?.call(previousVideo);
+    onThumbnailChanged?.call(previousVideo.thumbnailUrl);
+    
+    try {
+      // Obtener URL
+      final audioService = AudioService();
+      final audioUrl = await audioService.getAudioUrl(previousVideo.videoId);
       
-      // Lógica similar a playNextSong
-      try {
-        final audioService = AudioService();
-        
-        // Actualizar estado
-        _currentSong = previousVideo;
-        _currentThumbnailUrl = previousVideo.thumbnailUrl;
-        
-        // Guardar en caché
-        _saveToCache();
-        
-        // Notificar a la UI
-        if (onSongChanged != null) {
-          onSongChanged!(previousVideo);
-        }
-        
-        if (onThumbnailChanged != null) {
-          onThumbnailChanged!(previousVideo.thumbnailUrl);
-        }
-        
-        // Obtener URL del audio
-        
-        // Reproducir
-        try {
-
-          await _audioPlayer.play();
-          
-        } catch (e) {
-          if (kDebugMode) {
-            print('Error con background playback: $e');
-          }
-        }
-        
-        // Limpiar recursos
-        audioService.dispose();
-      } catch (e) {
-        if (kDebugMode) {
-          print('Error al reproducir canción anterior: $e');
-        }
+      // Reproducir
+      await _audioPlayer.stop();
+      await _audioPlayer.setUrl(audioUrl);
+      await _audioPlayer.play();
+      
+      _isPlaying = true;
+      onPlayStateChanged?.call(true);
+      
+      audioService.dispose();
+    } catch (e) {
+      if (kDebugMode) {
+        print('Error al reproducir canción anterior: $e');
       }
     }
   }
   
+  // Alternar reproducción/pausa
   void togglePlayPause() {
     if (_isPlaying) {
       _audioPlayer.pause();
@@ -390,12 +303,13 @@ class AudioPlayerManager extends ChangeNotifier {
     }
   }
   
+  // Buscar a una posición específica
   Future<void> seekTo(Duration position) async {
     await _audioPlayer.seek(position);
   }
 
+  // Mostrar opciones de la canción actual
   void showCurrentSongOptions(BuildContext context) {
-    // Si no hay canción actual, mostrar mensaje informativo
     if (_currentSong == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -412,10 +326,8 @@ class AudioPlayerManager extends ChangeNotifier {
       context: context,
       builder: (context) {
         return FutureBuilder<bool>(
-          // Obtener estado de favorito de forma asíncrona
           future: PlaylistService.isFavorite(currentSong.videoId),
           builder: (context, snapshot) {
-            // Usar el valor del Future o false si aún no está disponible
             final isFavorite = snapshot.data ?? false;
             
             return Column(
@@ -438,7 +350,6 @@ class AudioPlayerManager extends ChangeNotifier {
                   ),
                   onTap: () async {
                     Navigator.pop(context);
-                    // Obtener estado actualizado
                     final currentIsFavorite = await PlaylistService.isFavorite(currentSong.videoId);
                     
                     if (currentIsFavorite) {
@@ -466,6 +377,7 @@ class AudioPlayerManager extends ChangeNotifier {
     );
   }
 
+  // Mostrar diálogo para añadir a lista
   void _showAddToPlaylistDialog(BuildContext context, YouTubeVideo video) {
     showDialog(
       context: context,
@@ -499,7 +411,6 @@ class AudioPlayerManager extends ChangeNotifier {
                             onTap: () async {
                               Navigator.pop(context);
                               
-                              // Comprobar si la canción ya está en la lista
                               bool songExists = playlist.songs.any(
                                 (song) => song.videoId == video.videoId
                               );
@@ -548,6 +459,7 @@ class AudioPlayerManager extends ChangeNotifier {
     );
   }
 
+  // Mostrar diálogo para crear lista
   void _showCreatePlaylistDialog(BuildContext context, YouTubeVideo video) {
     final nameController = TextEditingController();
     final descriptionController = TextEditingController();
@@ -616,40 +528,30 @@ class AudioPlayerManager extends ChangeNotifier {
     );
   }
   
+  // Setters para actualizar canción y estado
   void setCurrentSong(YouTubeVideo? song) {
     _currentSong = song;
-    if (onSongChanged != null) {
-      onSongChanged!(song);
-    }
-    // Guardar en caché
+    onSongChanged?.call(song);
     _saveToCache();
   }
 
   void setThumbnail(String url) {
     _currentThumbnailUrl = url;
-    if (onThumbnailChanged != null) {
-      onThumbnailChanged!(url);
-    }
-    // No necesitamos guardar esto separadamente ya que setCurrentSong guardará todo
+    onThumbnailChanged?.call(url);
   }
 
   void setPlayState(bool isPlaying) {
     _isPlaying = isPlaying;
-    if (onPlayStateChanged != null) {
-      onPlayStateChanged!(isPlaying);
-    }
+    onPlayStateChanged?.call(isPlaying);
   }
 
-  // Método para guardar la canción actual en caché
+  // Persistencia en caché
   Future<void> _saveToCache() async {
     try {
-      if (_currentSong == null) {
-        return;
-      }
+      if (_currentSong == null) return;
       
       final prefs = await SharedPreferences.getInstance();
       
-      // Guardar datos de la canción
       final songData = {
         'videoId': _currentSong!.videoId,
         'title': _currentSong!.title,
@@ -658,10 +560,7 @@ class AudioPlayerManager extends ChangeNotifier {
         'description': _currentSong!.description
       };
       
-      // Guardar como cadena JSON
       await prefs.setString('current_song', jsonEncode(songData));
-      
-      // Guardar la posición actual
       await prefs.setInt('current_position', _position.inMilliseconds);
       
       if (kDebugMode) {
@@ -674,21 +573,15 @@ class AudioPlayerManager extends ChangeNotifier {
     }
   }
   
-  // Método para cargar la canción desde la caché
   Future<void> _loadFromCache() async {
     try {
       final prefs = await SharedPreferences.getInstance();
       
-      // Intentar cargar datos de la canción
       final songJson = prefs.getString('current_song');
-      if (songJson == null) {
-        return;
-      }
+      if (songJson == null) return;
       
-      // Parsear los datos
       final songData = jsonDecode(songJson) as Map<String, dynamic>;
       
-      // Crear objeto YouTubeVideo
       final cachedSong = YouTubeVideo(
         videoId: songData['videoId'],
         title: songData['title'],
@@ -697,24 +590,16 @@ class AudioPlayerManager extends ChangeNotifier {
         description: songData['description']
       );
       
-      // Restaurar los valores
       _currentSong = cachedSong;
       _currentThumbnailUrl = cachedSong.thumbnailUrl;
       
-      // Restaurar posición si existe
       if (prefs.containsKey('current_position')) {
         final savedPosition = prefs.getInt('current_position') ?? 0;
         _position = Duration(milliseconds: savedPosition);
       }
       
-      // Notificar cambios
-      if (onSongChanged != null) {
-        onSongChanged!(cachedSong);
-      }
-      
-      if (onThumbnailChanged != null) {
-        onThumbnailChanged!(cachedSong.thumbnailUrl);
-      }
+      onSongChanged?.call(cachedSong);
+      onThumbnailChanged?.call(cachedSong.thumbnailUrl);
       
       if (kDebugMode) {
         print('Canción cargada desde caché: ${cachedSong.title}');
