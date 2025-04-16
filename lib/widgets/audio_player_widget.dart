@@ -68,26 +68,59 @@ class _AudioPlayerWidgetState extends State<AudioPlayerWidget> {
   void _setupAudioPlayerListeners() {
     widget.audioPlayer.playerStateStream.listen((state) {
       if (state.processingState == ProcessingState.completed) {
+        // Si está al final de la canción, verificar si hay siguiente
         if (_relatedSongs.isNotEmpty && _currentSongIndex < _relatedSongs.length - 1) {
           _playNextSong();
+        } else {
+          // Si no hay siguiente, pausar y volver al inicio
+          widget.audioPlayer.pause();
+          widget.audioPlayer.seek(Duration.zero);
+          setState(() {
+            _isPlaying = false;
+          });
         }
       }
       
-      setState(() {});
+      setState(() {
+        // Actualizar estado de reproducción
+        _isPlaying = state.playing;
+      });
     });
     
+    // Reemplaza el listener de posición actual
     widget.audioPlayer.positionStream.listen((position) {
       setState(() {
-        _position = position;
+        // No permitir que la posición mostrada supere la duración total
+        if (_duration.inMilliseconds > 0 && 
+            position.inMilliseconds >= _duration.inMilliseconds) {
+          _position = _duration;
+          
+          // Pausa automática al final si no hay siguiente canción
+          if (!widget.audioPlayer.playerState.playing) {
+            _isPlaying = false;
+          }
+        } else {
+          _position = position;
+        }
       });
     });
     
     widget.audioPlayer.durationStream.listen((duration) {
-      setState(() {
-        _duration = duration != null 
-            ? Duration(seconds: (duration.inSeconds / 2).round()) 
-            : Duration.zero;
-      });
+      if (duration != null) {
+        // Asegurarse de usar la duración completa (no dividida por 2)
+        setState(() {
+          // Verificar si la duración recibida parece ser la mitad de la real
+          _duration = duration;
+          
+          if (kDebugMode) {
+            print('Duración recibida: ${_formatDuration(duration)}');
+          }
+        });
+      } else {
+        setState(() {
+          _duration = Duration.zero;
+        });
+      }
     });
     
     widget.audioPlayer.playingStream.listen((isPlaying) {
@@ -239,7 +272,11 @@ class _AudioPlayerWidgetState extends State<AudioPlayerWidget> {
               SizedBox(
                 width: 45,
                 child: Text(
-                  _formatDuration(_position),
+                  _formatDuration(
+                    _position.inMilliseconds > _duration.inMilliseconds
+                        ? _duration   // Nunca mostrar tiempo mayor que la duración total
+                        : _position
+                  ),
                   style: const TextStyle(
                     fontWeight: FontWeight.bold,
                     fontSize: 12,
@@ -260,16 +297,38 @@ class _AudioPlayerWidgetState extends State<AudioPlayerWidget> {
                   ),
                   child: Slider(
                     min: 0,
-                    max: _duration.inSeconds.toDouble(),
+                    max: _duration.inSeconds.toDouble() > 0 ? _duration.inSeconds.toDouble() : 1.0,
                     value: min(_position.inSeconds.toDouble(), _duration.inSeconds.toDouble()),
                     label: _formatDuration(Duration(seconds: _position.inSeconds)),
                     onChanged: (value) {
-                      setState(() {
-                        _position = Duration(seconds: value.toInt());
-                      });
+                      final newPosition = Duration(seconds: value.toInt());
+                      
+                      // Si estamos a menos de 1 segundo del final, ir al final exacto
+                      if (_duration.inSeconds - value.toInt() <= 1) {
+                        widget.audioPlayer.pause();
+                        widget.audioPlayer.seek(_duration);
+                        setState(() {
+                          _position = _duration;
+                          _isPlaying = false;
+                        });
+                      } else {
+                        setState(() {
+                          _position = newPosition;
+                        });
+                      }
                     },
                     onChangeEnd: (value) async {
                       try {
+                        // Si hemos llegado al final, pausar y no intentar reproducir
+                        if (value >= _duration.inSeconds.toDouble() - 1) {
+                          await widget.audioPlayer.pause();
+                          await widget.audioPlayer.seek(_duration - const Duration(milliseconds: 500));
+                          setState(() {
+                            _isPlaying = false;
+                          });
+                          return;
+                        }
+                        
                         final position = Duration(seconds: value.toInt());
                         await widget.audioPlayer.seek(position);
                         
