@@ -112,7 +112,7 @@ class PlaylistService {
     }
   }
   
-  // Añadir canción a playlist
+  // Añadir canción a playlist con su enlace de audio
   static Future<void> addSongToPlaylist(String playlistId, YouTubeVideo song) async {
     try {
       // Obtener playlists
@@ -125,11 +125,20 @@ class PlaylistService {
         throw Exception('Playlist no encontrada');
       }
       
-      // Añadir canción
+      // Añadir canción directamente - usamos la canción tal cual viene
+      // Así preservamos el enlace de audio si existe
       playlists[playlistIndex].addSong(song);
       
       // Guardar playlists
       await _savePlaylists(playlists);
+      
+      if (kDebugMode) {
+        if (song.audioUrl != null) {
+          print('Canción añadida a playlist con enlace existente');
+        } else {
+          print('Canción añadida a playlist sin enlace de audio');
+        }
+      }
     } catch (e) {
       if (kDebugMode) {
         print('Error al añadir canción a playlist: $e');
@@ -244,7 +253,7 @@ class PlaylistService {
     return favorites.any((video) => video.videoId == videoId);
   }
   
-  // Añadir canción a favoritos
+  // Añadir canción a favoritos 
   static Future<void> addFavorite(YouTubeVideo song) async {
     try {
       // Obtener favoritos
@@ -255,11 +264,19 @@ class PlaylistService {
         return; // Ya existe, no hacer nada
       }
       
-      // Añadir canción
+      // Añadir canción directamente - preservando el enlace si existe
       favorites.add(song);
       
       // Guardar favoritos
       await _saveFavorites(favorites);
+      
+      if (kDebugMode) {
+        if (song.audioUrl != null) {
+          print('Canción añadida a favoritos con enlace existente');
+        } else {
+          print('Canción añadida a favoritos sin enlace de audio');
+        }
+      }
     } catch (e) {
       if (kDebugMode) {
         print('Error al añadir favorito: $e');

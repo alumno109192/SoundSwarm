@@ -111,12 +111,25 @@ class AudioPlayerManager extends ChangeNotifier {
         // Ignorar errores no críticos
       }
       
-      // Obtener URL de audio
+      String audioUrl;
       final audioService = AudioService();
-      final audioUrl = await audioService.getAudioUrl(video.videoId);
       
-      if (kDebugMode) {
-        print('URL de audio obtenida: $audioUrl');
+      // Comprobar si la canción ya tiene un enlace de audio válido
+      if (video.audioUrl != null && !video.isAudioUrlExpired) {
+        audioUrl = video.audioUrl!;
+        if (kDebugMode) {
+          print('Usando enlace de audio guardado: $audioUrl');
+        }
+      } else {
+        // Obtener URL de audio
+        audioUrl = await audioService.getAudioUrl(video.videoId);
+        
+        // Actualizar el enlace en la canción
+        _currentSong = video.copyWithAudioUrl(audioUrl);
+        
+        if (kDebugMode) {
+          print('URL de audio nueva obtenida: $audioUrl');
+        }
       }
       
       // Detener reproducción actual
@@ -165,7 +178,7 @@ class AudioPlayerManager extends ChangeNotifier {
       
       // Cargar canciones relacionadas (mínimo)
       if (_relatedSongs.isEmpty) {
-        _relatedSongs = [video]; // Al menos incluir la canción actual
+        _relatedSongs = [_currentSong!]; // Al menos incluir la canción actual con URL actualizada
         _currentSongIndex = 0;
       }
       

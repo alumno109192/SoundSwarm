@@ -1,27 +1,44 @@
 class YouTubeVideo {
   final String videoId;
   final String title;
-  final String description;
-  final String thumbnailUrl;
   final String channelTitle;
-
+  final String thumbnailUrl;
+  final String? description;
+  final Duration? duration;
+  final DateTime? publishedAt;
+  
+  // Añadir estos campos para el enlace de audio
+  String? audioUrl;
+  int? audioUrlTimestamp;
+  
   YouTubeVideo({
     required this.videoId,
     required this.title,
-    required this.description,
-    required this.thumbnailUrl,
     required this.channelTitle,
+    required this.thumbnailUrl,
+    this.description,
+    this.duration,
+    this.publishedAt,
+    this.audioUrl,
+    this.audioUrlTimestamp,
   });
-
-  // Método toJson correcto (cambiar de factory a método de instancia)
-  Map<String, dynamic> toJson() => {
-    'videoId': videoId,
-    'title': title,
-    'description': description,
-    'thumbnailUrl': thumbnailUrl,
-    'channelTitle': channelTitle
-  };
-
+  
+  // Actualizar método toJson para incluir el enlace de audio
+  Map<String, dynamic> toJson() {
+    return {
+      'videoId': videoId,
+      'title': title,
+      'channelTitle': channelTitle,
+      'thumbnailUrl': thumbnailUrl,
+      'description': description,
+      'durationSeconds': duration?.inSeconds,
+      'publishedAt': publishedAt?.toIso8601String(),
+      'audioUrl': audioUrl,
+      'audioUrlTimestamp': audioUrlTimestamp,
+    };
+  }
+  
+  // Actualizar método fromJson para incluir el enlace de audio
   factory YouTubeVideo.fromJson(Map<String, dynamic> json) {
     // Obtener el ID del video de forma segura
     final String videoId = json['id']?['videoId'] ?? '';
@@ -61,6 +78,41 @@ class YouTubeVideo {
       description: snippet['description'] ?? '',
       thumbnailUrl: thumbnailUrl,
       channelTitle: snippet['channelTitle'] ?? '',
+      duration: json['durationSeconds'] != null
+          ? Duration(seconds: json['durationSeconds'])
+          : null,
+      publishedAt: json['publishedAt'] != null
+          ? DateTime.parse(json['publishedAt'])
+          : null,
+      audioUrl: json['audioUrl'],
+      audioUrlTimestamp: json['audioUrlTimestamp'],
+    );
+  }
+  
+  // Método para comprobar si el enlace de audio ha expirado
+  bool get isAudioUrlExpired {
+    if (audioUrl == null || audioUrlTimestamp == null) return true;
+    
+    // Comprobar si el enlace tiene más de 1 hora
+    final now = DateTime.now().millisecondsSinceEpoch;
+    final elapsed = now - audioUrlTimestamp!;
+    final oneHourInMs = 60 * 60 * 1000; // 1 hora en milisegundos
+    
+    return elapsed > oneHourInMs;
+  }
+  
+  // Método para actualizar el enlace de audio
+  YouTubeVideo copyWithAudioUrl(String url) {
+    return YouTubeVideo(
+      videoId: videoId,
+      title: title,
+      channelTitle: channelTitle,
+      thumbnailUrl: thumbnailUrl,
+      description: description,
+      duration: duration,
+      publishedAt: publishedAt,
+      audioUrl: url,
+      audioUrlTimestamp: DateTime.now().millisecondsSinceEpoch,
     );
   }
 }
