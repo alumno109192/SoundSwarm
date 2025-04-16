@@ -70,7 +70,22 @@ class PlaylistService {
   // Obtener una playlist por ID
   static Future<Playlist?> getPlaylist(String id) async {
     final playlists = await getPlaylists();
-    return playlists.firstWhere((playlist) => playlist.id == id, orElse: () => null as Playlist);
+    
+    // Versión corregida
+    try {
+      return playlists.firstWhere((playlist) => playlist.id == id);
+    } catch (e) {
+      // Si no se encuentra la playlist, devolver null
+      return null;
+    }
+    
+    // Alternativa con una solución más simple:
+    // for (var playlist in playlists) {
+    //   if (playlist.id == id) {
+    //     return playlist;
+    //   }
+    // }
+    // return null;
   }
   
   // Crear nueva playlist
