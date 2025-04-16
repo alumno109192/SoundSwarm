@@ -23,7 +23,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     WidgetsBinding.instance.addObserver(this);
     
     // Inicializar AudioPlayerManager
-    _playerManager = AudioPlayerManager();
+    _playerManager = AudioPlayerManager.instance;
     
     // Configurar callbacks para actualizar la UI
     _playerManager.onThumbnailChanged = (url) {

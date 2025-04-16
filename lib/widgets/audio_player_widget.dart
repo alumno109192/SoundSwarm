@@ -5,6 +5,7 @@ import 'package:just_audio_background/just_audio_background.dart';
 import 'package:soundswarm/model/youtube_video.dart';
 import 'package:soundswarm/service/audio_service.dart';
 import 'dart:math';
+import 'package:soundswarm/service/audio_player_manager.dart'; // Ensure this import exists
 
 class AudioPlayerWidget extends StatefulWidget {
   final AudioPlayer audioPlayer;
@@ -424,6 +425,29 @@ class _AudioPlayerWidgetState extends State<AudioPlayerWidget> {
               ),
             ],
           ),
+          
+         if (AudioPlayerManager.instance.hasPreloadError)
+            Container(
+              padding: const EdgeInsets.symmetric(vertical: 8.0, horizontal: 16.0),
+              margin: const EdgeInsets.only(bottom: 8.0),
+              decoration: BoxDecoration(
+                color: Colors.red.withOpacity(0.8),
+                borderRadius: BorderRadius.circular(8.0),
+              ),
+              child: const Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.error_outline, color: Colors.white),
+                  SizedBox(width: 8.0),
+                  Flexible(
+                    child: Text(
+                      'No se ha podido cargar la siguiente canción',
+                      style: TextStyle(color: Colors.white),
+                    ),
+                  ),
+                ],
+              ),
+            ),
         ],
       ),
     );

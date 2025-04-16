@@ -12,12 +12,22 @@ import 'package:soundswarm/service/playlist_service.dart';
 import 'package:soundswarm/service/recent_songs_service.dart';
 
 class AudioPlayerManager extends ChangeNotifier {
-  // Singleton pattern
+  // Singleton instance
   static final AudioPlayerManager _instance = AudioPlayerManager._internal();
-  factory AudioPlayerManager() => _instance;
+
+  // Private constructor
   AudioPlayerManager._internal() {
+    // Initialize player when the singleton is created
     _initializePlayer();
   }
+
+  // Alternative approach using factory constructor
+  factory AudioPlayerManager() {
+    return _instance;
+  }
+
+  // Public getter for the singleton instance
+  static AudioPlayerManager get instance => _instance;
 
   // Variables privadas
   late AudioPlayer _audioPlayer;
@@ -29,6 +39,14 @@ class AudioPlayerManager extends ChangeNotifier {
   int _currentSongIndex = 0;
   Duration _position = Duration.zero;
   Duration _duration = Duration.zero;
+  bool _isPreloadingNext = false;
+  YouTubeVideo? _preloadedSong;
+  String? _preloadedAudioUrl;
+  // Variables adicionales para reintentos
+  int _preloadRetries = 0;
+  static const int _maxPreloadRetries = 3;
+  bool _preloadFailureNotified = false;
+  bool _preloadError = false;
   
   // Getters
   bool get isInitialized => _isInitialized;
@@ -43,6 +61,7 @@ class AudioPlayerManager extends ChangeNotifier {
   YouTubeVideo? get currentSong => _currentSong;
   Duration get position => _position;
   Duration get duration => _duration;
+  bool get hasPreloadError => _preloadError;
   
   // Callbacks para notificar cambios en la UI
   Function(String? thumbnailUrl)? onThumbnailChanged;
@@ -70,16 +89,38 @@ class AudioPlayerManager extends ChangeNotifier {
   // Configurar listeners del reproductor
   void _setupAudioPlayerListeners() {
     _audioPlayer.playerStateStream.listen((state) {
+      if (kDebugMode) {
+        print('Estado del reproductor: ${state.processingState}, reproduciendo: ${state.playing}');
+      }
+      
       if (state.processingState == ProcessingState.completed) {
-        playNextSong();
+        if (kDebugMode) {
+          print('CANCIÓN COMPLETADA - Iniciando siguiente canción');
+        }
+        
+        // Es importante usar microtask para asegurar que se ejecute tan pronto como sea posible
+        Future.microtask(() => playNextSong());
       }
       
       _isPlaying = state.playing;
       onPlayStateChanged?.call(_isPlaying);
+      notifyListeners();
     });
     
     _audioPlayer.positionStream.listen((position) {
       _position = position;
+      
+      // Precargar siguiente canción cuando queden 30 segundos o menos
+      if (_duration.inSeconds > 0 && 
+          _position.inSeconds > 0 &&
+          _duration.inSeconds - _position.inSeconds <= 30 &&
+          !_isPreloadingNext &&
+          _relatedSongs.isNotEmpty &&
+          _currentSongIndex < _relatedSongs.length - 1) {
+        
+        _preloadNextSong();
+      }
+      
       if (position.inSeconds % 5 == 0) {
         _saveToCache();
       }
@@ -172,7 +213,7 @@ class AudioPlayerManager extends ChangeNotifier {
               SnackBar(content: Text('No se pudo reproducir el audio'))
             );
           }
-          throw e2;
+          rethrow;
         }
       }
       
@@ -228,42 +269,131 @@ class AudioPlayerManager extends ChangeNotifier {
   
   // Reproducir siguiente canción - SIMPLIFICADO
   Future<void> playNextSong() async {
-    if (_relatedSongs.isEmpty || _currentSong == null) return;
-    
-    // Si tenemos relatedSongs pero estamos al final, reiniciar
-    if (_currentSongIndex >= _relatedSongs.length - 1) {
-      _currentSongIndex = -1; // Así incrementando quedará en 0
+    if (kDebugMode) {
+      print('Iniciando reproducción de siguiente canción...');
+      print('Lista: ${_relatedSongs.length} canciones, índice actual: $_currentSongIndex');
     }
     
+    if (_relatedSongs.isEmpty) {
+      if (kDebugMode) {
+        print('No hay canciones en la lista para reproducir');
+      }
+      return;
+    }
+    
+    // Incrementar índice
     _currentSongIndex++;
-    if (_currentSongIndex < _relatedSongs.length) {
-      final nextVideo = _relatedSongs[_currentSongIndex];
-      
-      // Actualizar UI
+    
+    // Si llegamos al final, volver al inicio
+    if (_currentSongIndex >= _relatedSongs.length) {
+      _currentSongIndex = 0;
+      if (kDebugMode) {
+        print('Fin de la lista, volviendo al inicio');
+      }
+    }
+    
+    if (kDebugMode) {
+      print('Reproduciendo canción #${_currentSongIndex + 1}: ${_relatedSongs[_currentSongIndex].title}');
+    }
+    
+    // Obtener la canción a reproducir
+    final nextVideo = _relatedSongs[_currentSongIndex];
+    
+    try {
+      // Actualizar UI inmediatamente para mostrar progreso
       _currentSong = nextVideo;
       _currentThumbnailUrl = nextVideo.thumbnailUrl;
       onSongChanged?.call(nextVideo);
       onThumbnailChanged?.call(nextVideo.thumbnailUrl);
       
-      try {
-        // Obtener URL
+      // Determinar URL de audio
+      String audioUrl;
+      
+      if (nextVideo.audioUrl != null && !nextVideo.isAudioUrlExpired) {
+        // Usar URL en caché
+        audioUrl = nextVideo.audioUrl!;
+        if (kDebugMode) {
+          print('Usando URL en caché para: ${nextVideo.title}');
+        }
+      } else {
+        // Obtener nueva URL
         final audioService = AudioService();
-        final audioUrl = await audioService.getAudioUrl(nextVideo.videoId);
+        audioUrl = await audioService.getAudioUrl(nextVideo.videoId);
         
-        // Reproducir
-        await _audioPlayer.stop();
-        await _audioPlayer.setUrl(audioUrl);
+        // Actualizar la URL en la canción
+        _relatedSongs[_currentSongIndex] = nextVideo.copyWithAudioUrl(audioUrl);
+        _currentSong = _relatedSongs[_currentSongIndex];
+        
+        if (kDebugMode) {
+          print('Nueva URL obtenida para: ${nextVideo.title}');
+        }
+        
+        audioService.dispose();
+      }
+      
+      // Crear MediaItem
+      final mediaItem = MediaItem(
+        id: nextVideo.videoId,
+        title: nextVideo.title,
+        artist: nextVideo.channelTitle,
+        artUri: Uri.parse(nextVideo.thumbnailUrl),
+      );
+      
+      // Detener reproducción actual
+      await _audioPlayer.stop();
+      
+      // Reproducir nueva canción
+      bool success = false;
+      
+      try {
+        // Intento principal
+        await _audioPlayer.setAudioSource(
+          AudioSource.uri(Uri.parse(audioUrl), tag: mediaItem)
+        );
         await _audioPlayer.play();
+        success = true;
+      } catch (e) {
+        if (kDebugMode) {
+          print('Error con método principal, intentando alternativa: $e');
+        }
         
+        try {
+          // Método alternativo
+          await _audioPlayer.setUrl(audioUrl);
+          await _audioPlayer.play();
+          success = true;
+        } catch (e2) {
+          if (kDebugMode) {
+            print('Error con método alternativo: $e2');
+          }
+          throw e2; // Propagar para manejo en catch externo
+        }
+      }
+      
+      if (success) {
         _isPlaying = true;
         onPlayStateChanged?.call(true);
         
-        audioService.dispose();
-      } catch (e) {
-        if (kDebugMode) {
-          print('Error al reproducir siguiente canción: $e');
+        // Guardar en caché
+        _saveToCache();
+        
+        // Iniciar precarga de la siguiente si corresponde
+        if (_currentSongIndex < _relatedSongs.length - 1) {
+          Future.delayed(const Duration(seconds: 2), () {
+            _isPreloadingNext = false; // Permitir nueva precarga
+          });
         }
       }
+      
+    } catch (e) {
+      if (kDebugMode) {
+        print('Error al reproducir siguiente canción: $e');
+      }
+      
+      // Si falla, intentar con la siguiente canción después de un breve retraso
+      Future.delayed(const Duration(seconds: 2), () {
+        playNextSong(); // Intentar con la siguiente
+      });
     }
   }
   
@@ -627,8 +757,8 @@ class AudioPlayerManager extends ChangeNotifier {
  // Añade este método a la clase _PlaylistDetailScreenState
 
 // Método para reproducir todas las canciones
-Future<void> playAllSongs(BuildContext context, dynamic playlist, ) async {
-  if (playlist.songs.isEmpty) {
+Future<void> playAllSongs(BuildContext context, List<YouTubeVideo> playlist) async {
+  if (playlist.isEmpty) {
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(content: Text('La playlist está vacía')),
     );
@@ -642,15 +772,15 @@ Future<void> playAllSongs(BuildContext context, dynamic playlist, ) async {
     );
     
     // Reproducir la primera canción
-    await playSong(context, playlist.songs[0]);
+    await playSong(context, playlist.first);
     
     // Cargar todas las canciones en la lista de reproducción
-    AudioPlayerManager().loadPlaylist(playlist.songs);
+    AudioPlayerManager._instance.loadPlaylist(playlist);
     
     // Notificar al usuario
     if (context.mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Reproduciendo: ${playlist.name}')),
+        SnackBar(content: Text('Reproduciendo: ${playlist.first.title}')),
       );
     }
   } catch (e) {
@@ -682,5 +812,145 @@ void loadPlaylist(List<YouTubeVideo> songs) {
   
   // Notificar cambios
   notifyListeners();
+}
+
+// Nuevo método para precargar la siguiente canción con reintentos
+Future<void> _preloadNextSong() async {
+  if (_isPreloadingNext || _relatedSongs.isEmpty) return;
+  
+  _isPreloadingNext = true;
+  
+  try {
+    // Calcular índice de la siguiente canción
+    int nextIndex = _currentSongIndex + 1;
+    if (nextIndex >= _relatedSongs.length) {
+      _isPreloadingNext = false;
+      return;
+    }
+    
+    final nextSong = _relatedSongs[nextIndex];
+    
+    if (kDebugMode) {
+      print('Precargando siguiente canción: ${nextSong.title} (intento ${_preloadRetries + 1}/$_maxPreloadRetries)');
+    }
+    
+    // Verificar si ya tenemos una URL válida
+    if (nextSong.audioUrl != null && !nextSong.isAudioUrlExpired) {
+      _preloadedSong = nextSong;
+      _preloadedAudioUrl = nextSong.audioUrl;
+      
+      // Reiniciar contador de reintentos al tener éxito
+      _preloadRetries = 0;
+      _preloadFailureNotified = false;
+      
+      if (kDebugMode) {
+        print('Usando URL precargada de la caché');
+      }
+    } else {
+      // Obtener URL del audio en segundo plano
+      final audioService = AudioService();
+      try {
+        final audioUrl = await audioService.getAudioUrl(nextSong.videoId);
+        
+        // Actualizar la URL en la canción
+        _preloadedSong = nextSong.copyWithAudioUrl(audioUrl);
+        _preloadedAudioUrl = audioUrl;
+        
+        // Actualizar la canción en la lista
+        _relatedSongs[nextIndex] = _preloadedSong!;
+        
+        // Reiniciar contador de reintentos al tener éxito
+        _preloadRetries = 0;
+        _preloadFailureNotified = false;
+        
+        if (kDebugMode) {
+          print('Nueva URL precargada: ${audioUrl.substring(0, 50)}...');
+        }
+      } catch (e) {
+        _preloadRetries++;
+        
+        if (kDebugMode) {
+          print('Error al precargar canción (intento $_preloadRetries): $e');
+        }
+        
+        // Si aún no hemos superado el máximo de reintentos, programar un reintento
+        if (_preloadRetries < _maxPreloadRetries) {
+          Future.delayed(Duration(seconds: 2 * _preloadRetries), () {
+            _isPreloadingNext = false;  // Permitir un nuevo intento
+            _preloadNextSong();  // Reintentar
+          });
+          return; // Salir para evitar restablecer _isPreloadingNext
+        } else {
+          // Hemos agotado los reintentos
+          if (!_preloadFailureNotified) {
+            _handlePreloadFailure();
+            _preloadFailureNotified = true;
+          }
+        }
+      } finally {
+        audioService.dispose();
+      }
+    }
+  } catch (e) {
+    _preloadRetries++;
+    
+    if (kDebugMode) {
+      print('Error general al precargar (intento $_preloadRetries): $e');
+    }
+    
+    // Si aún no hemos superado el máximo de reintentos, programar un reintento
+    if (_preloadRetries < _maxPreloadRetries) {
+      Future.delayed(Duration(seconds: 2 * _preloadRetries), () {
+        _isPreloadingNext = false;  // Permitir un nuevo intento
+        _preloadNextSong();  // Reintentar
+      });
+      return; // Salir para evitar restablecer _isPreloadingNext
+    } else {
+      // Hemos agotado los reintentos
+      if (!_preloadFailureNotified) {
+        _handlePreloadFailure();
+        _preloadFailureNotified = true;
+      }
+    }
+  } finally {
+    _isPreloadingNext = false;
+  }
+}
+
+// Método para manejar el fallo después de múltiples reintentos
+void _handlePreloadFailure() {
+  if (kDebugMode) {
+    print('No se pudo cargar la siguiente canción después de $_maxPreloadRetries intentos');
+  }
+  
+  // Si la canción actual está por terminar (menos de 5 segundos), detener reproducción
+  if (_duration.inSeconds > 0 && 
+      _position.inSeconds > 0 &&
+      _duration.inSeconds - _position.inSeconds <= 5) {
+    
+    _audioPlayer.pause();
+    _isPlaying = false;
+    onPlayStateChanged?.call(false);
+    
+    // Usar overlay para mostrar mensaje sin contexto
+    _showPreloadErrorOverlay();
+  }
+  
+  // Reiniciar para futuros intentos
+  _preloadRetries = 0;
+}
+
+// Método para mostrar mensaje de error como overlay
+void _showPreloadErrorOverlay() {
+  // Necesitamos un BuildContext para mostrar SnackBar o Dialog
+  // Como alternativa, podemos usar una variable de estado que la UI pueda observar
+  _preloadError = true;
+  notifyListeners();
+  
+  // Programar un limpiado del error después de un tiempo
+  Future.delayed(const Duration(seconds: 5), () {
+    _preloadError = false;
+    notifyListeners();
+  });
 }
 }

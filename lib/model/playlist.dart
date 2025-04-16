@@ -8,6 +8,14 @@ class Playlist {
   DateTime createdAt;
   List<YouTubeVideo> songs;
 
+
+  // Getter formal para songs
+  List<YouTubeVideo> get getSongs => songs;
+  
+  // Setter formal para songs
+  set setSongs(List<YouTubeVideo> newSongs) => songs = newSongs;
+
+
   Playlist({
     required this.id,
     required this.name,

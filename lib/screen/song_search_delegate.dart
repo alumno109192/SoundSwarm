@@ -283,7 +283,7 @@ class SongSearchDelegate extends SearchDelegate<String> {
                       onTap: () async {
                         try {
                           // Obtener instancia del manager
-                          final playerManager = AudioPlayerManager();
+                          final playerManager = AudioPlayerManager.instance;
                           
                           // Mostrar indicador de carga
                           if (context.mounted) {
@@ -369,7 +369,7 @@ class SongSearchDelegate extends SearchDelegate<String> {
                     Navigator.pop(context);
                     try {
                       // Obtener instancia del manager
-                      final playerManager = AudioPlayerManager();
+                      final playerManager = AudioPlayerManager.instance;
                       
                       // Mostrar indicador de carga
                       ScaffoldMessenger.of(context).showSnackBar(

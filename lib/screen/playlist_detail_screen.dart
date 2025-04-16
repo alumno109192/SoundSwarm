@@ -300,7 +300,7 @@ class _PlaylistDetailScreenState extends State<PlaylistDetailScreen> {
   void _playSong(YouTubeVideo song) {
     try {
       // Usar AudioPlayerManager en lugar de HomeScreen.playSong
-      final playerManager = AudioPlayerManager();
+      final playerManager = AudioPlayerManager.instance; // Replace with the appropriate named constructor
       playerManager.playSong(context, song);
       
       // No es necesario cerrar la pantalla
@@ -313,7 +313,8 @@ class _PlaylistDetailScreenState extends State<PlaylistDetailScreen> {
 
   void _playAllSongs() {
     try {
-      final playerManager = AudioPlayerManager();
+      final playerManager = AudioPlayerManager.instance; // Replace with the appropriate named constructor
+      // Reproducir todas las canciones de la playlist
       playerManager.playAllSongs(context, _playlist!.songs);
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
