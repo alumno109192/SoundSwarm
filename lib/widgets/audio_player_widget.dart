@@ -92,9 +92,19 @@ class _AudioPlayerWidgetState extends State<AudioPlayerWidget> {
   
   // Listeners para posición y duración (simplificados)
   widget.audioPlayer.positionStream.listen((position) {
+    final halfDuration = Duration(seconds: (_duration.inSeconds / 2).round());
     setState(() {
       _position = position;
     });
+
+    // Si llega a la mitad, pasar a la siguiente canción
+    if (_duration.inSeconds > 0 &&
+        position.inSeconds >= halfDuration.inSeconds) {
+      if (kDebugMode) {
+        print('⏩ Llegó a la mitad, pasando a la siguiente canción');
+      }
+      _playNextSong();
+    }
   });
   
   widget.audioPlayer.durationStream.listen((duration) {
@@ -272,6 +282,7 @@ Future<void> _playNextSong() async {
 
   @override
   Widget build(BuildContext context) {
+    final halfDuration = Duration(seconds: (_duration.inSeconds / 2).round());
     return Container(
       padding: const EdgeInsets.only(bottom: 20, top: 10),
       decoration: BoxDecoration(
@@ -296,8 +307,8 @@ Future<void> _playNextSong() async {
                 width: 45,
                 child: Text(
                   _formatDuration(
-                    _position.inMilliseconds > _duration.inMilliseconds
-                        ? _duration   // Nunca mostrar tiempo mayor que la duración total
+                    _position.inMilliseconds > halfDuration.inMilliseconds
+                        ? halfDuration   // Nunca mostrar tiempo mayor que la duración total
                         : _position
                   ),
                   style: const TextStyle(
@@ -320,11 +331,11 @@ Future<void> _playNextSong() async {
                   ),
                   child: Slider(
                     min: 0,
-                    max: _duration.inSeconds.toDouble() > 0 ? _duration.inSeconds.toDouble() : 1.0,
-                    value: min(_position.inSeconds.toDouble(), _duration.inSeconds.toDouble()),
-                    label: _formatDuration(Duration(seconds: _position.inSeconds)),
+                    max: halfDuration.inSeconds.toDouble() > 0 ? halfDuration.inSeconds.toDouble() : 1.0,
+                    value: min(_position.inSeconds.toDouble(), halfDuration.inSeconds.toDouble()),
+                    label: _formatDuration(Duration(seconds: min(_position.inSeconds, halfDuration.inSeconds))),
                     // Cambia el color basado en el tiempo restante
-                    activeColor: _duration.inSeconds - _position.inSeconds <= 30 ? Colors.orange : Colors.blue[700],
+                    activeColor: halfDuration.inSeconds - _position.inSeconds <= 30 ? Colors.orange : Colors.blue[700],
                     onChanged: (value) {
                       // Simplemente actualiza la posición sin pausar cuando está cerca del final
                       final newPosition = Duration(seconds: value.toInt());
@@ -335,7 +346,7 @@ Future<void> _playNextSong() async {
                     onChangeEnd: (value) async {
                       try {
                         // Si el usuario arrastra hasta el final (o muy cerca), reproducir siguiente canción
-                        if (value >= _duration.inSeconds.toDouble() - 1) {
+                        if (value >= halfDuration.inSeconds.toDouble() - 1) {
                           if (kDebugMode) {
                             print('Slider llegó al final - reproduciendo siguiente canción');
                           }
@@ -369,7 +380,7 @@ Future<void> _playNextSong() async {
               SizedBox(
                 width: 45,
                 child: Text(
-                  _formatDuration(_duration),
+                  _formatDuration(halfDuration),
                   style: const TextStyle(
                     fontWeight: FontWeight.bold,
                     fontSize: 12,
