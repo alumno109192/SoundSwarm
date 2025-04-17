@@ -111,12 +111,29 @@ class _PlaylistDetailScreenState extends State<PlaylistDetailScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // Nombre y descripción de la playlist
-              Text(
-                _playlist!.name,
-                style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                  fontWeight: FontWeight.bold
-                ),
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: [
+                  Expanded(
+                    child: Text(
+                      _playlist!.name,
+                      style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                        fontWeight: FontWeight.bold,
+                      ),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                  IconButton(
+                    tooltip: 'Reproducir todo',
+                    icon: const Icon(Icons.play_circle_fill, size: 32),
+                    onPressed: _playlist!.songs.isEmpty ? null : _playAllSongs,
+                  ),
+                  IconButton(
+                    tooltip: 'Reproducir aleatorio',
+                    icon: const Icon(Icons.shuffle, size: 28),
+                    onPressed: _playlist!.songs.isEmpty ? null : _playAllSongsRandom,
+                  ),
+                ],
               ),
               if (_playlist!.description != null && _playlist!.description!.isNotEmpty)
                 Padding(
@@ -145,48 +162,6 @@ class _PlaylistDetailScreenState extends State<PlaylistDetailScreen> {
                 ),
               ),
             ],
-          ),
-        ),
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
-          child: Card(
-            elevation: 2.0,
-            color: Theme.of(context).colorScheme.primaryContainer,
-            child: InkWell(
-              onTap: _playlist!.songs.isEmpty 
-                  ? null 
-                  : () => _playAllSongs(),
-              child: Padding(
-                padding: const EdgeInsets.symmetric(vertical: 16.0, horizontal: 8.0),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Row(
-                      children: [
-                        const Icon(Icons.play_circle_filled, size: 38),
-                        const SizedBox(width: 16),
-                        Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              'Reproducir todo',
-                              style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                                fontWeight: FontWeight.bold
-                              ),
-                            ),
-                            Text(
-                              '${_playlist!.songs.length} canciones',
-                              style: Theme.of(context).textTheme.bodySmall,
-                            ),
-                          ],
-                        ),
-                      ],
-                    ),
-                    const Icon(Icons.arrow_forward),
-                  ],
-                ),
-              ),
-            ),
           ),
         ),
         Expanded(
@@ -319,6 +294,33 @@ class _PlaylistDetailScreenState extends State<PlaylistDetailScreen> {
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Error al reproducir todas las canciones: $e')),
+      );
+    }
+  }
+
+  void _playAllSongsRandom() {
+    try {
+      final playerManager = AudioPlayerManager.instance;
+      final currentSong = playerManager.currentSong;
+      final allSongs = List<YouTubeVideo>.from(_playlist!.songs);
+
+      // Quitar la canción actual de la lista antes de mezclar
+      if (currentSong != null) {
+        allSongs.removeWhere((song) => song.videoId == currentSong.videoId);
+      }
+
+      // Mezclar el resto
+      allSongs.shuffle();
+
+      // Si hay canción actual, ponerla al principio
+      if (currentSong != null) {
+        allSongs.insert(0, currentSong);
+      }
+
+      playerManager.playAllSongs(context, allSongs);
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error al reproducir aleatorio: $e')),
       );
     }
   }

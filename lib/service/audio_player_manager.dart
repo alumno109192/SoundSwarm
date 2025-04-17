@@ -954,3 +954,30 @@ class AudioPlayerManager extends ChangeNotifier {
     });
   }
 }
+
+void _playAllSongsRandom() {
+  try {
+    final playerManager = AudioPlayerManager.instance;
+    final currentSong = playerManager.currentSong;
+    final allSongs = List<YouTubeVideo>.from(_playlist!.songs);
+
+    // Quitar la canción actual de la lista antes de mezclar
+    if (currentSong != null) {
+      allSongs.removeWhere((song) => song.videoId == currentSong.videoId);
+    }
+
+    // Mezclar el resto
+    allSongs.shuffle();
+
+    // Si hay canción actual, ponerla al principio
+    if (currentSong != null) {
+      allSongs.insert(0, currentSong);
+    }
+
+    playerManager.playAllSongs(context, allSongs);
+  } catch (e) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('Error al reproducir aleatorio: $e')),
+    );
+  }
+}
