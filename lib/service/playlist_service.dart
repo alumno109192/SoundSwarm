@@ -135,7 +135,7 @@ class PlaylistService {
       playlists[playlistIndex].addSong(song);
 
       // Guardar playlists
-      await _savePlaylists(playlists);
+      //await _savePlaylists(playlists);
       // Guardar el enlace de audio en la canción
       await PlaylistService.saveSongToSqlite(playlistId, song);
 
