@@ -8,6 +8,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:soundswarm/model/playlist.dart';
 import 'package:soundswarm/model/youtube_video.dart';
 import 'package:soundswarm/service/audio_service.dart';
+import 'package:soundswarm/service/playback_observer_service.dart';
 import 'package:soundswarm/service/playlist_service.dart';
 import 'package:soundswarm/service/recent_songs_service.dart';
 
@@ -130,6 +131,11 @@ class AudioPlayerManager extends ChangeNotifier {
     _audioPlayer.durationStream.listen((duration) {
       _duration = duration ?? Duration.zero;
       notifyListeners();
+    });
+
+    final observer = PlaybackObserverService(audioPlayer);
+    observer.startObserving((position) {
+      // Aquí puedes actualizar UI, logs, etc.
     });
   }
 

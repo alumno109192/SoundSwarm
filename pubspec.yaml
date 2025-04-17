@@ -39,8 +39,6 @@ dependencies:
   just_audio: ^0.10.0
   youtube_explode_dart: ^2.4.0
   shared_preferences: ^2.5.3
-  google_sign_in: ^6.3.0
-  googleapis: ^14.0.0
   audio_session: ^0.2.0
   just_audio_background: ^0.0.1-beta.15
   screen_state: ^4.1.1

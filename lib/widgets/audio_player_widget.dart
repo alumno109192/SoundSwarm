@@ -67,69 +67,42 @@ class _AudioPlayerWidgetState extends State<AudioPlayerWidget> {
   }
   
   void _setupAudioPlayerListeners() {
-    widget.audioPlayer.playerStateStream.listen((state) {
-      if (state.processingState == ProcessingState.completed) {
-        // Si está al final de la canción, verificar si hay siguiente
-        if (_relatedSongs.isNotEmpty && _currentSongIndex < _relatedSongs.length - 1) {
-          _playNextSong();
-        } else {
-          // Si no hay siguiente, pausar y volver al inicio
-          widget.audioPlayer.pause();
-          widget.audioPlayer.seek(Duration.zero);
-          setState(() {
-            _isPlaying = false;
-          });
-        }
+  // Listener para detectar cuando termina una canción
+  widget.audioPlayer.playerStateStream.listen((state) {
+    if (kDebugMode) {
+      print('Estado del reproductor: ${state.processingState}, playing: ${state.playing}');
+    }
+    
+    // Esta es la parte clave - detectar cuando una canción termina
+    if (state.processingState == ProcessingState.completed) {
+      if (kDebugMode) {
+        print('🎵 Canción completada, reproduciendo la siguiente...');
       }
       
-      setState(() {
-        // Actualizar estado de reproducción
-        _isPlaying = state.playing;
+      // Usar Future.microtask para asegurar que se ejecute lo antes posible
+      Future.microtask(() {
+        _playNextSong();
       });
-    });
+    }
     
-    // Reemplaza el listener de posición actual
-    widget.audioPlayer.positionStream.listen((position) {
-      setState(() {
-        // No permitir que la posición mostrada supere la duración total
-        if (_duration.inMilliseconds > 0 && 
-            position.inMilliseconds >= _duration.inMilliseconds) {
-          _position = _duration;
-          
-          // Pausa automática al final si no hay siguiente canción
-          if (!widget.audioPlayer.playerState.playing) {
-            _isPlaying = false;
-          }
-        } else {
-          _position = position;
-        }
-      });
+    setState(() {
+      _isPlaying = state.playing;
     });
-    
-    widget.audioPlayer.durationStream.listen((duration) {
-      if (duration != null) {
-        // Asegurarse de usar la duración completa (no dividida por 2)
-        setState(() {
-          // Verificar si la duración recibida parece ser la mitad de la real
-          _duration = duration;
-          
-          if (kDebugMode) {
-            print('Duración recibida: ${_formatDuration(duration)}');
-          }
-        });
-      } else {
-        setState(() {
-          _duration = Duration.zero;
-        });
-      }
+  });
+  
+  // Listeners para posición y duración (simplificados)
+  widget.audioPlayer.positionStream.listen((position) {
+    setState(() {
+      _position = position;
     });
-    
-    widget.audioPlayer.playingStream.listen((isPlaying) {
-      setState(() {
-        _isPlaying = isPlaying;
-      });
+  });
+  
+  widget.audioPlayer.durationStream.listen((duration) {
+    setState(() {
+      _duration = duration ?? Duration.zero;
     });
-  }
+  });
+}
   
   // Función auxiliar para formatear duración en MM:SS
   String _formatDuration(Duration duration) {
@@ -139,38 +112,87 @@ class _AudioPlayerWidgetState extends State<AudioPlayerWidget> {
     return "$minutes:$seconds";
   }
   
-  Future<void> _loadRelatedSongs(String videoId) async {
-    try {
-      if (videoId.isEmpty) {
-        if (kDebugMode) {
-          print('ID de video vacío, no se pueden cargar canciones relacionadas');
-        }
-        return;
-      }
-      
-    } catch (e) {
+  // Reemplaza el método _loadRelatedSongs() con esta versión básica
+
+Future<void> _loadRelatedSongs(String videoId) async {
+  try {
+    if (videoId.isEmpty) {
       if (kDebugMode) {
-        print('Error al cargar canciones relacionadas: $e');
+        print('ID de video vacío, no se pueden cargar canciones relacionadas');
+      }
+      return;
+    }
+
+    // Para simplificar, al menos asegurarse de que tenemos la canción actual en la lista
+    if (_localCurrentSong != null && _relatedSongs.isEmpty) {
+      _relatedSongs = [_localCurrentSong!];
+      _currentSongIndex = 0;
+      
+      if (kDebugMode) {
+        print('Lista de reproducción inicializada con la canción actual');
       }
     }
+    
+    // En un caso real, aquí cargarías más canciones relacionadas
+    // Por ahora, solo nos aseguramos de que tengamos al menos la actual
+    
+  } catch (e) {
+    if (kDebugMode) {
+      print('Error al cargar canciones relacionadas: $e');
+    }
+  }
+}
+  
+  // Reemplaza el método _playNextSong() con esta versión simplificada
+
+Future<void> _playNextSong() async {
+  if (kDebugMode) {
+    print('Intentando reproducir siguiente canción...');
   }
   
-  Future<void> _playNextSong() async {
-    if (_relatedSongs.isEmpty || _currentSongIndex >= _relatedSongs.length - 1) {
-      if (widget.currentSong != null) {
-        await _loadRelatedSongs(widget.currentSong!.videoId);
+  try {
+    // Incrementar índice
+    _currentSongIndex++;
+    
+    // Si llegamos al final, volver al principio
+    if (_currentSongIndex >= _relatedSongs.length) {
+      _currentSongIndex = 0;
+      
+      if (kDebugMode) {
+        print('Fin de la lista, volviendo al principio');
       }
       
+      // Si no hay canciones en la lista, no hacer nada
       if (_relatedSongs.isEmpty) {
+        if (kDebugMode) {
+          print('La lista está vacía, no hay más canciones para reproducir');
+        }
         return;
       }
     }
     
-    _currentSongIndex++;
-    if (_currentSongIndex < _relatedSongs.length) {
-      await _playSong(_relatedSongs[_currentSongIndex]);
+    if (kDebugMode) {
+      print('Reproduciendo canción #${_currentSongIndex + 1} de ${_relatedSongs.length}');
+    }
+    
+    // Obtener la siguiente canción
+    final nextVideo = _relatedSongs[_currentSongIndex];
+    
+    // Reproducir la siguiente canción
+    await _playSong(nextVideo);
+    
+  } catch (e) {
+    if (kDebugMode) {
+      print('Error al reproducir siguiente canción: $e');
+    }
+    
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error al reproducir siguiente canción: $e')),
+      );
     }
   }
+}
   
   Future<void> _playPreviousSong() async {
     if (_relatedSongs.isEmpty || _currentSongIndex <= 0) {
@@ -301,38 +323,33 @@ class _AudioPlayerWidgetState extends State<AudioPlayerWidget> {
                     max: _duration.inSeconds.toDouble() > 0 ? _duration.inSeconds.toDouble() : 1.0,
                     value: min(_position.inSeconds.toDouble(), _duration.inSeconds.toDouble()),
                     label: _formatDuration(Duration(seconds: _position.inSeconds)),
+                    // Cambia el color basado en el tiempo restante
+                    activeColor: _duration.inSeconds - _position.inSeconds <= 30 ? Colors.orange : Colors.blue[700],
                     onChanged: (value) {
+                      // Simplemente actualiza la posición sin pausar cuando está cerca del final
                       final newPosition = Duration(seconds: value.toInt());
-                      
-                      // Si estamos a menos de 1 segundo del final, ir al final exacto
-                      if (_duration.inSeconds - value.toInt() <= 1) {
-                        widget.audioPlayer.pause();
-                        widget.audioPlayer.seek(_duration);
-                        setState(() {
-                          _position = _duration;
-                          _isPlaying = false;
-                        });
-                      } else {
-                        setState(() {
-                          _position = newPosition;
-                        });
-                      }
+                      setState(() {
+                        _position = newPosition;
+                      });
                     },
                     onChangeEnd: (value) async {
                       try {
-                        // Si hemos llegado al final, pausar y no intentar reproducir
+                        // Si el usuario arrastra hasta el final (o muy cerca), reproducir siguiente canción
                         if (value >= _duration.inSeconds.toDouble() - 1) {
-                          await widget.audioPlayer.pause();
-                          await widget.audioPlayer.seek(_duration - const Duration(milliseconds: 500));
-                          setState(() {
-                            _isPlaying = false;
-                          });
+                          if (kDebugMode) {
+                            print('Slider llegó al final - reproduciendo siguiente canción');
+                          }
+                          
+                          // Reproducir siguiente canción directamente
+                          _playNextSong();
                           return;
                         }
                         
+                        // Comportamiento normal para cualquier otra posición
                         final position = Duration(seconds: value.toInt());
                         await widget.audioPlayer.seek(position);
                         
+                        // Si no está reproduciendo y debería estarlo, iniciar reproducción
                         if (!_isPlaying && widget.currentThumbnailUrl != null) {
                           await widget.audioPlayer.play();
                           setState(() {
