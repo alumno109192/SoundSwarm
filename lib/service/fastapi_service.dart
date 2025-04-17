@@ -5,7 +5,7 @@ import 'package:soundswarm/model/youtube_video.dart';
 
 class FastApiService {
   // URL base del servidor FastAPI (ajusta según tu configuración)
-  final String _baseUrl = 'http://192.168.0.101:8000';
+  //final String _baseUrl = 'http://192.168.0.101:8000';
   // URL base para producción
   final String _baseUrlPro = 'https://yt-dlp-uvag.onrender.com';
   
