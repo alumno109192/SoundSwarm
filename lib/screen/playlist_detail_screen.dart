@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:soundswarm/model/playlist.dart';
 import 'package:soundswarm/model/youtube_video.dart';
+import 'package:soundswarm/service/playlist_player_controller.dart';
 import 'package:soundswarm/service/playlist_service.dart';
 import 'package:soundswarm/service/audio_player_manager.dart';
 import 'package:soundswarm/service/playlist_db_service.dart';
@@ -28,12 +29,6 @@ class _PlaylistDetailScreenState extends State<PlaylistDetailScreen> {
   void initState() {
     super.initState();
     _loadPlaylist();
-  }
-
-  @override
-  void dispose() {
-    // NO disponer del AudioPlayer aquí, ya que es compartido
-    super.dispose();
   }
 
   Future<void> _loadPlaylist() async {

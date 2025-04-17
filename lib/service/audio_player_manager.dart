@@ -36,7 +36,9 @@ class AudioPlayerManager extends ChangeNotifier {
   String? _currentThumbnailUrl;
   YouTubeVideo? _currentSong;
   List<YouTubeVideo> _relatedSongs = [];
+  get relatedSongs => _relatedSongs;
   int _currentSongIndex = 0;
+  get currentSongIndex => _currentSongIndex;
   Duration _position = Duration.zero;
   Duration _duration = Duration.zero;
   bool _isPreloadingNext = false;
@@ -205,34 +207,50 @@ class AudioPlayerManager extends ChangeNotifier {
 
       try {
         // Método principal
-        await _audioPlayer.setAudioSource(
-          AudioSource.uri(Uri.parse(audioUrl), tag: mediaItem),
-        );
-        await _audioPlayer.play();
-        _isPlaying = true;
-        onPlayStateChanged?.call(true);
+        try {
+          // Obtener SIEMPRE un audioUrl fresco
+          final audioService = AudioService();
+          String audioUrl = await audioService.getAudioUrl(video.videoId);
+
+          if (audioUrl.isEmpty || !audioUrl.startsWith('http')) {
+            throw Exception('URL de audio inválida');
+          }
+
+          await _audioPlayer.setAudioSource(
+            AudioSource.uri(Uri.parse(audioUrl), tag: mediaItem),
+          );
+          await _audioPlayer.play();
+          _isPlaying = true;
+          onPlayStateChanged?.call(true);
+        } catch (e) {
+          if (kDebugMode) {
+            print('Error al reproducir audio: $e');
+            print('Reintentando obtener URL de audio...');
+          }
+          // Reintentar una vez
+          try {
+            final audioService = AudioService();
+            String audioUrl = await audioService.getAudioUrl(video.videoId);
+            if (audioUrl.isEmpty || !audioUrl.startsWith('http')) {
+              throw Exception('URL de audio inválida');
+            }
+            await _audioPlayer.setAudioSource(
+              AudioSource.uri(Uri.parse(audioUrl), tag: mediaItem),
+            );
+            await _audioPlayer.play();
+            _isPlaying = true;
+            onPlayStateChanged?.call(true);
+          } catch (e) {
+            if (kDebugMode) {
+              print('Error definitivo al reproducir audio: $e');
+            }
+            // Notifica a la UI o muestra un mensaje de error
+          }
+        }
       } catch (e) {
         if (kDebugMode) {
           print('Error al reproducir audio: $e');
           print('Intentando método alternativo...');
-        }
-
-        // Método alternativo más simple
-        try {
-          await _audioPlayer.setUrl(audioUrl);
-          await _audioPlayer.play();
-          _isPlaying = true;
-          onPlayStateChanged?.call(true);
-        } catch (e2) {
-          if (kDebugMode) {
-            print('Error en reproducción alternativa: $e2');
-          }
-          if (context.mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(content: Text('No se pudo reproducir el audio')),
-            );
-          }
-          rethrow;
         }
       }
 
