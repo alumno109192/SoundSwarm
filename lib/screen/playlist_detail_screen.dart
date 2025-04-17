@@ -4,6 +4,7 @@ import 'package:soundswarm/model/playlist.dart';
 import 'package:soundswarm/model/youtube_video.dart';
 import 'package:soundswarm/service/playlist_service.dart';
 import 'package:soundswarm/service/audio_player_manager.dart';
+import 'package:soundswarm/service/playlist_db_service.dart';
 
 class PlaylistDetailScreen extends StatefulWidget {
   final String playlistId;
@@ -41,15 +42,26 @@ class _PlaylistDetailScreenState extends State<PlaylistDetailScreen> {
     });
 
     try {
+      // 1. Carga la info básica de la playlist
       final playlist = await PlaylistService.getPlaylist(widget.playlistId);
+
+      if (playlist != null) {
+        // 2. Carga las canciones desde SQLite
+        final songs = await PlaylistDbService.getSongsFromDatabase(
+          widget.playlistId,
+        );
+        playlist.songs
+          ..clear()
+          ..addAll(songs);
+      }
+
       setState(() {
         _playlist = playlist;
       });
     } catch (e) {
-      // Manejo de error
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error al cargar playlist: $e')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Error al cargar playlist: $e')));
     } finally {
       setState(() {
         _isLoading = false;
@@ -63,15 +75,13 @@ class _PlaylistDetailScreenState extends State<PlaylistDetailScreen> {
       appBar: AppBar(
         title: Text(_playlist?.name ?? 'Playlist'),
         actions: [
-          IconButton(
-            icon: const Icon(Icons.refresh),
-            onPressed: _loadPlaylist,
-          ),
+          IconButton(icon: const Icon(Icons.refresh), onPressed: _loadPlaylist),
         ],
       ),
-      body: _isLoading
-          ? const Center(child: CircularProgressIndicator())
-          : _playlist == null
+      body:
+          _isLoading
+              ? const Center(child: CircularProgressIndicator())
+              : _playlist == null
               ? const Center(child: Text('Playlist no encontrada'))
               : _buildPlaylistContent(),
     );
@@ -117,9 +127,8 @@ class _PlaylistDetailScreenState extends State<PlaylistDetailScreen> {
                   Expanded(
                     child: Text(
                       _playlist!.name,
-                      style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                        fontWeight: FontWeight.bold,
-                      ),
+                      style: Theme.of(context).textTheme.headlineSmall
+                          ?.copyWith(fontWeight: FontWeight.bold),
                       overflow: TextOverflow.ellipsis,
                     ),
                   ),
@@ -131,11 +140,13 @@ class _PlaylistDetailScreenState extends State<PlaylistDetailScreen> {
                   IconButton(
                     tooltip: 'Reproducir aleatorio',
                     icon: const Icon(Icons.shuffle, size: 28),
-                    onPressed: _playlist!.songs.isEmpty ? null : _playAllSongsRandom,
+                    onPressed:
+                        _playlist!.songs.isEmpty ? null : _playAllSongsRandom,
                   ),
                 ],
               ),
-              if (_playlist!.description != null && _playlist!.description!.isNotEmpty)
+              if (_playlist!.description != null &&
+                  _playlist!.description!.isNotEmpty)
                 Padding(
                   padding: const EdgeInsets.only(top: 4.0),
                   child: Text(
@@ -143,7 +154,7 @@ class _PlaylistDetailScreenState extends State<PlaylistDetailScreen> {
                     style: Theme.of(context).textTheme.bodyMedium,
                   ),
                 ),
-              
+
               // Estadísticas de la playlist
               Padding(
                 padding: const EdgeInsets.only(top: 8.0),
@@ -176,16 +187,18 @@ class _PlaylistDetailScreenState extends State<PlaylistDetailScreen> {
                   decoration: BoxDecoration(
                     color: Colors.grey[800],
                     borderRadius: BorderRadius.circular(4),
-                    image: song.thumbnailUrl.isNotEmpty
-                        ? DecorationImage(
-                            image: NetworkImage(song.thumbnailUrl),
-                            fit: BoxFit.cover,
-                          )
-                        : null,
+                    image:
+                        song.thumbnailUrl.isNotEmpty
+                            ? DecorationImage(
+                              image: NetworkImage(song.thumbnailUrl),
+                              fit: BoxFit.cover,
+                            )
+                            : null,
                   ),
-                  child: song.thumbnailUrl.isEmpty
-                      ? const Icon(Icons.music_note, color: Colors.white)
-                      : null,
+                  child:
+                      song.thumbnailUrl.isEmpty
+                          ? const Icon(Icons.music_note, color: Colors.white)
+                          : null,
                 ),
                 title: Text(
                   song.title,
@@ -222,7 +235,7 @@ class _PlaylistDetailScreenState extends State<PlaylistDetailScreen> {
           future: PlaylistService.isFavorite(song.videoId),
           builder: (context, snapshot) {
             final isFavorite = snapshot.data ?? false;
-            
+
             return Column(
               mainAxisSize: MainAxisSize.min,
               children: [
@@ -240,7 +253,7 @@ class _PlaylistDetailScreenState extends State<PlaylistDetailScreen> {
                   onTap: () async {
                     Navigator.pop(context);
                     await PlaylistService.removeSongFromPlaylist(
-                      widget.playlistId, 
+                      widget.playlistId,
                       song.videoId,
                     );
                     _loadPlaylist();
@@ -249,9 +262,7 @@ class _PlaylistDetailScreenState extends State<PlaylistDetailScreen> {
                 ListTile(
                   leading: const Icon(Icons.favorite),
                   title: Text(
-                    isFavorite 
-                        ? 'Quitar de favoritos'
-                        : 'Añadir a favoritos',
+                    isFavorite ? 'Quitar de favoritos' : 'Añadir a favoritos',
                   ),
                   onTap: () async {
                     Navigator.pop(context);
@@ -275,20 +286,24 @@ class _PlaylistDetailScreenState extends State<PlaylistDetailScreen> {
   void _playSong(YouTubeVideo song) {
     try {
       // Usar AudioPlayerManager en lugar de HomeScreen.playSong
-      final playerManager = AudioPlayerManager.instance; // Replace with the appropriate named constructor
+      final playerManager =
+          AudioPlayerManager
+              .instance; // Replace with the appropriate named constructor
       playerManager.playSong(context, song);
-      
+
       // No es necesario cerrar la pantalla
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error al reproducir: $e')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Error al reproducir: $e')));
     }
   }
 
   void _playAllSongs() {
     try {
-      final playerManager = AudioPlayerManager.instance; // Replace with the appropriate named constructor
+      final playerManager =
+          AudioPlayerManager
+              .instance; // Replace with the appropriate named constructor
       // Reproducir todas las canciones de la playlist
       playerManager.playAllSongs(context, _playlist!.songs);
     } catch (e) {

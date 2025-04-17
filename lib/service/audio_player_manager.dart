@@ -171,20 +171,20 @@ class AudioPlayerManager extends ChangeNotifier {
         // Ignorar errores no críticos
       }
 
+      // Antes de reproducir, comprueba si el enlace es válido
       String audioUrl;
       final audioService = AudioService();
 
-      // Comprobar si la canción ya tiene un enlace de audio válido
       if (video.audioUrl != null && !video.isAudioUrlExpired) {
         audioUrl = video.audioUrl!;
         if (kDebugMode) {
           print('Usando enlace de audio guardado: $audioUrl');
         }
       } else {
-        // Obtener URL de audio
+        // Obtener URL de audio nueva si está caducada o no existe
         audioUrl = await audioService.getAudioUrl(video.videoId);
 
-        // Actualizar el enlace en la canción
+        // Actualizar el enlace en la canción (y opcionalmente en la base de datos)
         _currentSong = video.copyWithAudioUrl(audioUrl);
 
         if (kDebugMode) {
@@ -952,32 +952,5 @@ class AudioPlayerManager extends ChangeNotifier {
       _preloadError = false;
       notifyListeners();
     });
-  }
-}
-
-void _playAllSongsRandom() {
-  try {
-    final playerManager = AudioPlayerManager.instance;
-    final currentSong = playerManager.currentSong;
-    final allSongs = List<YouTubeVideo>.from(_playlist!.songs);
-
-    // Quitar la canción actual de la lista antes de mezclar
-    if (currentSong != null) {
-      allSongs.removeWhere((song) => song.videoId == currentSong.videoId);
-    }
-
-    // Mezclar el resto
-    allSongs.shuffle();
-
-    // Si hay canción actual, ponerla al principio
-    if (currentSong != null) {
-      allSongs.insert(0, currentSong);
-    }
-
-    playerManager.playAllSongs(context, allSongs);
-  } catch (e) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('Error al reproducir aleatorio: $e')),
-    );
   }
 }
