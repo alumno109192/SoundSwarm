@@ -1,11 +1,9 @@
 import 'dart:async';
-import 'dart:convert';
+import 'dart:math';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:just_audio_background/just_audio_background.dart';
-import 'package:shared_preferences/shared_preferences.dart';
-import 'package:soundswarm/model/playlist.dart';
 import 'package:soundswarm/model/youtube_video.dart';
 import 'package:soundswarm/service/audio_service.dart';
 import 'package:soundswarm/service/playlist_service.dart';
@@ -39,15 +37,7 @@ class AudioPlayerManager extends ChangeNotifier {
   get relatedSongs => _relatedSongs;
   int _currentSongIndex = 0;
   get currentSongIndex => _currentSongIndex;
-  Duration _position = Duration.zero;
-  Duration _duration = Duration.zero;
-  bool _isPreloadingNext = false;
-  YouTubeVideo? _preloadedSong;
-  // Variables adicionales para reintentos
-  int _preloadRetries = 0;
-  static const int _maxPreloadRetries = 3;
-  bool _preloadFailureNotified = false;
-  bool _preloadError = false;
+  final Duration _position = Duration.zero;
 
   // Getters
   bool get isInitialized => _isInitialized;
@@ -62,96 +52,38 @@ class AudioPlayerManager extends ChangeNotifier {
   String? get currentThumbnailUrl => _currentThumbnailUrl;
   YouTubeVideo? get currentSong => _currentSong;
   Duration get position => _position;
-  Duration get duration => _duration;
-  bool get hasPreloadError => _preloadError;
 
   // Callbacks para notificar cambios en la UI
   Function(String? thumbnailUrl)? onThumbnailChanged;
   Function(YouTubeVideo? song)? onSongChanged;
   Function(bool isPlaying)? onPlayStateChanged;
 
+  get hasPreloadError => null;
+
   // Inicialización del reproductor
-  Future<void> _initializePlayer() async {
+  Future<void> initializePlayer() async {
     try {
       _audioPlayer = AudioPlayer();
-      _setupAudioPlayerListeners();
+      //_setupAudioPlayerListeners();
       _isInitialized = true;
       if (kDebugMode) {
         print('AudioPlayer inicializado correctamente');
       }
-      _loadFromCache();
+      // _loadFromCache();
     } catch (e) {
       if (kDebugMode) {
         print('Error al inicializar AudioPlayer: $e');
       }
-      Future.delayed(const Duration(seconds: 1), _initializePlayer);
+      //Future.delayed(const Duration(seconds: 1), _initializePlayer);
     }
   }
 
-  // Configurar listeners del reproductor
-  void _setupAudioPlayerListeners() {
-    _audioPlayer.playerStateStream.listen((state) {
-      if (kDebugMode) {
-        print(
-          'Estado del reproductor: ${state.processingState}, reproduciendo: ${state.playing}',
-        );
-      }
-
-      if (state.processingState == ProcessingState.completed) {
-        if (kDebugMode) {
-          print('CANCIÓN COMPLETADA - Iniciando siguiente canción');
-        }
-
-        // Es importante usar microtask para asegurar que se ejecute tan pronto como sea posible
-        playNextSong();
-      }
-
-      _isPlaying = state.playing;
-      onPlayStateChanged?.call(_isPlaying);
-      notifyListeners();
-    });
-
-    _audioPlayer.positionStream.listen((position) {
-      _position = position;
-
-      // Calcular la mitad de la duración
-      final halfDuration = Duration(seconds: (_duration.inSeconds / 2).round());
-
-      // Si llega a la mitad, pasar a la siguiente canción
-      if (_duration.inSeconds > 0 &&
-          position.inSeconds >= halfDuration.inSeconds) {
-        if (kDebugMode) {
-          print('⏩ Llegó a la mitad, pasando a la siguiente canción');
-        }
-        playNextSong();
-        return; // Evita seguir ejecutando el resto del listener
-      }
-
-      // Precargar siguiente canción cuando queden 30 segundos o menos para la mitad
-      if (_duration.inSeconds > 0 &&
-          _position.inSeconds > 0 &&
-          halfDuration.inSeconds - _position.inSeconds <= 30 &&
-          !_isPreloadingNext &&
-          _relatedSongs.isNotEmpty &&
-          _currentSongIndex < _relatedSongs.length - 1) {
-        _preloadNextSong();
-      }
-
-      if (position.inSeconds % 5 == 0) {
-        _saveToCache();
-      }
-      notifyListeners();
-    });
-
-    _audioPlayer.durationStream.listen((duration) {
-      _duration = duration ?? Duration.zero;
-      notifyListeners();
-    });
-
-    _audioPlayer.playingStream.listen((isPlaying) {
-      _isPlaying = isPlaying;
-      notifyListeners();
-    });
+  void _initializePlayer() {
+    _audioPlayer = AudioPlayer();
+    _isInitialized = true;
+    if (kDebugMode) {
+      print('AudioPlayer inicializado correctamente');
+    }
   }
 
   // MÉTODO PRINCIPAL DE REPRODUCCIÓN - SIMPLIFICADO
@@ -166,7 +98,7 @@ class AudioPlayerManager extends ChangeNotifier {
       onThumbnailChanged?.call(video.thumbnailUrl);
 
       // Guardar en caché y historial
-      _saveToCache();
+      //_saveToCache();
       try {
         RecentSongsService.addRecentSong(video);
       } catch (e) {
@@ -378,7 +310,7 @@ class AudioPlayerManager extends ChangeNotifier {
 
       _isPlaying = true;
       onPlayStateChanged?.call(true);
-      _saveToCache();
+      //_saveToCache();
       notifyListeners();
     } catch (e) {
       if (kDebugMode) {
@@ -477,7 +409,7 @@ class AudioPlayerManager extends ChangeNotifier {
                   title: const Text('Añadir a una lista'),
                   onTap: () {
                     Navigator.pop(context);
-                    _showAddToPlaylistDialog(context, currentSong);
+                    //_showAddToPlaylistDialog(context, currentSong);
                   },
                 ),
                 ListTile(
@@ -524,172 +456,11 @@ class AudioPlayerManager extends ChangeNotifier {
     );
   }
 
-  // Mostrar diálogo para añadir a lista
-  void _showAddToPlaylistDialog(BuildContext context, YouTubeVideo video) {
-    showDialog(
-      context: context,
-      builder: (context) {
-        return FutureBuilder<List<Playlist>>(
-          future: PlaylistService.getPlaylists(),
-          builder: (context, snapshot) {
-            if (snapshot.connectionState == ConnectionState.waiting) {
-              return const AlertDialog(
-                title: Text('Cargando listas...'),
-                content: Center(child: CircularProgressIndicator()),
-              );
-            }
-
-            final playlists = snapshot.data ?? [];
-
-            return AlertDialog(
-              title: const Text('Añadir a lista'),
-              content: SizedBox(
-                width: double.maxFinite,
-                height: 300,
-                child:
-                    playlists.isEmpty
-                        ? const Center(child: Text('No tienes listas creadas'))
-                        : ListView.builder(
-                          shrinkWrap: true,
-                          itemCount: playlists.length,
-                          itemBuilder: (context, index) {
-                            final playlist = playlists[index];
-                            return ListTile(
-                              title: Text(playlist.name),
-                              onTap: () async {
-                                Navigator.pop(context);
-
-                                bool songExists = playlist.songs.any(
-                                  (song) => song.videoId == video.videoId,
-                                );
-
-                                if (songExists) {
-                                  if (!context.mounted) return;
-                                  ScaffoldMessenger.of(context).showSnackBar(
-                                    SnackBar(
-                                      content: Text(
-                                        '${video.title} ya está en ${playlist.name}',
-                                      ),
-                                    ),
-                                  );
-                                  return;
-                                }
-
-                                await PlaylistService.addSongToPlaylist(
-                                  playlist.id,
-                                  video,
-                                );
-
-                                if (context.mounted) {
-                                  ScaffoldMessenger.of(context).showSnackBar(
-                                    SnackBar(
-                                      content: Text(
-                                        '${video.title} añadida a ${playlist.name}',
-                                      ),
-                                    ),
-                                  );
-                                }
-                              },
-                            );
-                          },
-                        ),
-              ),
-              actions: [
-                TextButton(
-                  onPressed: () => Navigator.pop(context),
-                  child: const Text('Cancelar'),
-                ),
-                TextButton(
-                  onPressed: () {
-                    Navigator.pop(context);
-                    _showCreatePlaylistDialog(context, video);
-                  },
-                  child: const Text('Nueva lista'),
-                ),
-              ],
-            );
-          },
-        );
-      },
-    );
-  }
-
-  // Mostrar diálogo para crear lista
-  void _showCreatePlaylistDialog(BuildContext context, YouTubeVideo video) {
-    final nameController = TextEditingController();
-    final descriptionController = TextEditingController();
-
-    showDialog(
-      context: context,
-      builder:
-          (context) => AlertDialog(
-            title: const Text('Nueva lista'),
-            content: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                TextField(
-                  controller: nameController,
-                  decoration: const InputDecoration(
-                    labelText: 'Nombre',
-                    hintText: 'Ej: Mis favoritas',
-                  ),
-                  autofocus: true,
-                ),
-                const SizedBox(height: 8),
-                TextField(
-                  controller: descriptionController,
-                  decoration: const InputDecoration(
-                    labelText: 'Descripción (opcional)',
-                    hintText: 'Ej: Canciones para el gimnasio',
-                  ),
-                  maxLines: 2,
-                ),
-              ],
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(context),
-                child: const Text('Cancelar'),
-              ),
-              TextButton(
-                onPressed: () async {
-                  final name = nameController.text.trim();
-                  if (name.isNotEmpty) {
-                    final description =
-                        descriptionController.text.trim().isNotEmpty
-                            ? descriptionController.text.trim()
-                            : null;
-
-                    Navigator.pop(context);
-
-                    final playlist = await PlaylistService.createPlaylist(
-                      name,
-                      description: description,
-                    );
-
-                    await PlaylistService.addSongToPlaylist(playlist.id, video);
-
-                    if (context.mounted) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(
-                          content: Text('${video.title} añadida a $name'),
-                        ),
-                      );
-                    }
-                  }
-                },
-                child: const Text('Crear'),
-              ),
-            ],
-          ),
-    );
-  }
-
   // Setters para actualizar canción y estado
   void setCurrentSong(YouTubeVideo? song) {
     _currentSong = song;
     onSongChanged?.call(song);
-    _saveToCache();
+    //_saveToCache();
   }
 
   void setThumbnail(String url) {
@@ -700,72 +471,6 @@ class AudioPlayerManager extends ChangeNotifier {
   void setPlayState(bool isPlaying) {
     _isPlaying = isPlaying;
     onPlayStateChanged?.call(isPlaying);
-  }
-
-  // Persistencia en caché
-  Future<void> _saveToCache() async {
-    try {
-      if (_currentSong == null) return;
-
-      final prefs = await SharedPreferences.getInstance();
-
-      final songData = {
-        'videoId': _currentSong!.videoId,
-        'title': _currentSong!.title,
-        'thumbnailUrl': _currentSong!.thumbnailUrl,
-        'channelTitle': _currentSong!.channelTitle,
-        'description': _currentSong!.description,
-      };
-
-      await prefs.setString('current_song', jsonEncode(songData));
-      await prefs.setInt('current_position', _position.inMilliseconds);
-
-      if (kDebugMode) {
-        print('Canción guardada en caché: ${_currentSong!.title}');
-      }
-    } catch (e) {
-      if (kDebugMode) {
-        print('Error al guardar en caché: $e');
-      }
-    }
-  }
-
-  Future<void> _loadFromCache() async {
-    try {
-      final prefs = await SharedPreferences.getInstance();
-
-      final songJson = prefs.getString('current_song');
-      if (songJson == null) return;
-
-      final songData = jsonDecode(songJson) as Map<String, dynamic>;
-
-      final cachedSong = YouTubeVideo(
-        videoId: songData['videoId'],
-        title: songData['title'],
-        thumbnailUrl: songData['thumbnailUrl'],
-        channelTitle: songData['channelTitle'],
-        description: songData['description'],
-      );
-
-      _currentSong = cachedSong;
-      _currentThumbnailUrl = cachedSong.thumbnailUrl;
-
-      if (prefs.containsKey('current_position')) {
-        final savedPosition = prefs.getInt('current_position') ?? 0;
-        _position = Duration(milliseconds: savedPosition);
-      }
-
-      onSongChanged?.call(cachedSong);
-      onThumbnailChanged?.call(cachedSong.thumbnailUrl);
-
-      if (kDebugMode) {
-        print('Canción cargada desde caché: ${cachedSong.title}');
-      }
-    } catch (e) {
-      if (kDebugMode) {
-        print('Error al cargar desde caché: $e');
-      }
-    }
   }
 
   // Añade este método a la clase _PlaylistDetailScreenState
@@ -831,144 +536,57 @@ class AudioPlayerManager extends ChangeNotifier {
     notifyListeners();
   }
 
-  // Nuevo método para precargar la siguiente canción con reintentos
-  Future<void> _preloadNextSong() async {
-    if (_isPreloadingNext || _relatedSongs.isEmpty) return;
-
-    _isPreloadingNext = true;
+  /// Reproduce todas las canciones de la lista en orden aleatorio
+  Future<void> playAllRandomSong(
+    BuildContext context,
+    List<YouTubeVideo> playlist,
+  ) async {
+    if (playlist.isEmpty) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('La playlist está vacía')));
+      return;
+    }
 
     try {
-      // Calcular índice de la siguiente canción
-      int nextIndex = _currentSongIndex + 1;
-      if (nextIndex >= _relatedSongs.length) {
-        _isPreloadingNext = false;
-        return;
-      }
+      // Mezclar la lista de canciones
+      final random = Random();
+      final shuffledPlaylist = List<YouTubeVideo>.from(playlist)
+        ..shuffle(random);
 
-      final nextSong = _relatedSongs[nextIndex];
+      // Mostrar indicador de carga
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Cargando playlist aleatoria...')),
+      );
 
-      if (kDebugMode) {
-        print(
-          'Precargando siguiente canción: ${nextSong.title} (intento ${_preloadRetries + 1}/$_maxPreloadRetries)',
+      // Reproducir la primera canción de la lista mezclada
+      await playSong(context, shuffledPlaylist.first);
+
+      // Cargar todas las canciones en la lista de reproducción mezclada
+      AudioPlayerManager._instance.loadPlaylist(shuffledPlaylist);
+
+      // Notificar al usuario
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'Reproduciendo aleatoriamente: ${shuffledPlaylist.first.title}',
+            ),
+          ),
         );
       }
-
-      // Verificar si ya tenemos una URL válida
-      if (nextSong.audioUrl != null && !nextSong.isAudioUrlExpired) {
-        _preloadedSong = nextSong;
-
-        // Reiniciar contador de reintentos al tener éxito
-        _preloadRetries = 0;
-        _preloadFailureNotified = false;
-
-        if (kDebugMode) {
-          print('Usando URL precargada de la caché');
-        }
-      } else {
-        // Obtener URL del audio en segundo plano
-        final audioService = AudioService();
-        try {
-          final audioUrl = await audioService.getAudioUrl(nextSong.videoId);
-
-          // Actualizar la URL en la canción
-          _preloadedSong = nextSong.copyWithAudioUrl(audioUrl);
-
-          // Actualizar la canción en la lista
-          _relatedSongs[nextIndex] = _preloadedSong!;
-
-          // Reiniciar contador de reintentos al tener éxito
-          _preloadRetries = 0;
-          _preloadFailureNotified = false;
-
-          if (kDebugMode) {
-            print('Nueva URL precargada: ${audioUrl.substring(0, 50)}...');
-          }
-        } catch (e) {
-          _preloadRetries++;
-
-          if (kDebugMode) {
-            print('Error al precargar canción (intento $_preloadRetries): $e');
-          }
-
-          // Si aún no hemos superado el máximo de reintentos, programar un reintento
-          if (_preloadRetries < _maxPreloadRetries) {
-            Future.delayed(Duration(seconds: 2 * _preloadRetries), () {
-              _isPreloadingNext = false; // Permitir un nuevo intento
-              _preloadNextSong(); // Reintentar
-            });
-            return; // Salir para evitar restablecer _isPreloadingNext
-          } else {
-            // Hemos agotado los reintentos
-            if (!_preloadFailureNotified) {
-              _handlePreloadFailure();
-              _preloadFailureNotified = true;
-            }
-          }
-        } finally {
-          audioService.dispose();
-        }
-      }
     } catch (e) {
-      _preloadRetries++;
-
       if (kDebugMode) {
-        print('Error general al precargar (intento $_preloadRetries): $e');
+        print('Error al reproducir la playlist aleatoria: $e');
       }
 
-      // Si aún no hemos superado el máximo de reintentos, programar un reintento
-      if (_preloadRetries < _maxPreloadRetries) {
-        Future.delayed(Duration(seconds: 2 * _preloadRetries), () {
-          _isPreloadingNext = false; // Permitir un nuevo intento
-          _preloadNextSong(); // Reintentar
-        });
-        return; // Salir para evitar restablecer _isPreloadingNext
-      } else {
-        // Hemos agotado los reintentos
-        if (!_preloadFailureNotified) {
-          _handlePreloadFailure();
-          _preloadFailureNotified = true;
-        }
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error al reproducir la playlist aleatoria: $e'),
+          ),
+        );
       }
-    } finally {
-      _isPreloadingNext = false;
     }
-  }
-
-  // Método para manejar el fallo después de múltiples reintentos
-  void _handlePreloadFailure() {
-    if (kDebugMode) {
-      print(
-        'No se pudo cargar la siguiente canción después de $_maxPreloadRetries intentos',
-      );
-    }
-
-    // Si la canción actual está por terminar (menos de 5 segundos), detener reproducción
-    if (_duration.inSeconds > 0 &&
-        _position.inSeconds > 0 &&
-        _duration.inSeconds - _position.inSeconds <= 5) {
-      _audioPlayer.pause();
-      _isPlaying = false;
-      onPlayStateChanged?.call(false);
-
-      // Usar overlay para mostrar mensaje sin contexto
-      _showPreloadErrorOverlay();
-    }
-
-    // Reiniciar para futuros intentos
-    _preloadRetries = 0;
-  }
-
-  // Método para mostrar mensaje de error como overlay
-  void _showPreloadErrorOverlay() {
-    // Necesitamos un BuildContext para mostrar SnackBar o Dialog
-    // Como alternativa, podemos usar una variable de estado que la UI pueda observar
-    _preloadError = true;
-    notifyListeners();
-
-    // Programar un limpiado del error después de un tiempo
-    Future.delayed(const Duration(seconds: 5), () {
-      _preloadError = false;
-      notifyListeners();
-    });
   }
 }

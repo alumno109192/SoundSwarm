@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:soundswarm/model/playlist.dart';
 import 'package:soundswarm/model/youtube_video.dart';
-import 'package:soundswarm/service/playlist_player_controller.dart';
 import 'package:soundswarm/service/playlist_service.dart';
 import 'package:soundswarm/service/audio_player_manager.dart';
 import 'package:soundswarm/service/playlist_db_service.dart';
@@ -130,13 +129,28 @@ class _PlaylistDetailScreenState extends State<PlaylistDetailScreen> {
                   IconButton(
                     tooltip: 'Reproducir todo',
                     icon: const Icon(Icons.play_circle_fill, size: 32),
-                    onPressed: _playlist!.songs.isEmpty ? null : _playAllSongs,
+                    onPressed:
+                        _playlist!.songs.isEmpty
+                            ? null
+                            : () {
+                              AudioPlayerManager.instance.playAllSongs(
+                                context,
+                                _playlist!.songs,
+                              );
+                            },
                   ),
                   IconButton(
                     tooltip: 'Reproducir aleatorio',
                     icon: const Icon(Icons.shuffle, size: 28),
                     onPressed:
-                        _playlist!.songs.isEmpty ? null : _playAllSongsRandom,
+                        _playlist!.songs.isEmpty
+                            ? null
+                            : () {
+                              AudioPlayerManager.instance.playAllRandomSong(
+                                context,
+                                _playlist!.songs,
+                              );
+                            },
                   ),
                 ],
               ),
@@ -291,47 +305,6 @@ class _PlaylistDetailScreenState extends State<PlaylistDetailScreen> {
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(SnackBar(content: Text('Error al reproducir: $e')));
-    }
-  }
-
-  void _playAllSongs() {
-    try {
-      final playerManager =
-          AudioPlayerManager
-              .instance; // Replace with the appropriate named constructor
-      // Reproducir todas las canciones de la playlist
-      playerManager.playAllSongs(context, _playlist!.songs);
-    } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error al reproducir todas las canciones: $e')),
-      );
-    }
-  }
-
-  void _playAllSongsRandom() {
-    try {
-      final playerManager = AudioPlayerManager.instance;
-      final currentSong = playerManager.currentSong;
-      final allSongs = List<YouTubeVideo>.from(_playlist!.songs);
-
-      // Quitar la canción actual de la lista antes de mezclar
-      if (currentSong != null) {
-        allSongs.removeWhere((song) => song.videoId == currentSong.videoId);
-      }
-
-      // Mezclar el resto
-      allSongs.shuffle();
-
-      // Si hay canción actual, ponerla al principio
-      if (currentSong != null) {
-        allSongs.insert(0, currentSong);
-      }
-
-      playerManager.playAllSongs(context, allSongs);
-    } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error al reproducir aleatorio: $e')),
-      );
     }
   }
 

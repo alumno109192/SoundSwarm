@@ -1,9 +1,7 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:just_audio/just_audio.dart';
-import 'package:just_audio_background/just_audio_background.dart';
 import 'package:soundswarm/model/youtube_video.dart';
-import 'package:soundswarm/service/audio_service.dart';
 import 'dart:math';
 import 'package:soundswarm/service/audio_player_manager.dart'; // Ensure this import exists
 
@@ -30,9 +28,8 @@ class AudioPlayerWidget extends StatefulWidget {
 class _AudioPlayerWidgetState extends State<AudioPlayerWidget> {
   bool _isPlaying = false;
   Duration _position = Duration.zero;
-  Duration _duration = Duration.zero;
-  List<YouTubeVideo> _relatedSongs = [];
-  int _currentSongIndex = 0;
+  final List<YouTubeVideo> _relatedSongs = [];
+  final int _currentSongIndex = 0;
 
   // Añadir esta variable para mantener una copia interna
   YouTubeVideo? _localCurrentSong;
@@ -55,13 +52,14 @@ class _AudioPlayerWidgetState extends State<AudioPlayerWidget> {
     super.didUpdateWidget(oldWidget);
 
     // Actualizar la canción local cuando cambia el widget
-    if (widget.currentSong != null &&
+    if (AudioPlayerManager.instance.currentSong != null &&
         (oldWidget.currentSong == null ||
-            widget.currentSong!.videoId != oldWidget.currentSong!.videoId)) {
+            AudioPlayerManager.instance.currentSong!.videoId !=
+                oldWidget.currentSong!.videoId)) {
       _localCurrentSong = widget.currentSong;
 
-      if (_localCurrentSong != null) {
-        AudioPlayerManager.instance.relatedSongs(
+      if (AudioPlayerManager.instance.currentSong != null) {
+        AudioPlayerManager.instance.loadRelatedSongs(
           AudioPlayerManager.instance.currentSong!.videoId,
         );
       }
@@ -105,7 +103,20 @@ class _AudioPlayerWidgetState extends State<AudioPlayerWidget> {
 
   @override
   Widget build(BuildContext context) {
-    final halfDuration = Duration(seconds: (_duration.inSeconds / 2).round());
+    final halfDuration =
+        (AudioPlayerManager.instance.currentSong != null &&
+                AudioPlayerManager.instance.currentSong!.duration != null)
+            ? Duration(
+              seconds:
+                  (AudioPlayerManager
+                              .instance
+                              .currentSong!
+                              .duration!
+                              .inSeconds /
+                          2)
+                      .round(),
+            )
+            : Duration.zero;
     return Container(
       padding: const EdgeInsets.only(bottom: 20, top: 10),
       decoration: BoxDecoration(
@@ -272,13 +283,12 @@ class _AudioPlayerWidgetState extends State<AudioPlayerWidget> {
                 ),
                 onPressed: () {
                   if (_isPlaying) {
-                    widget.audioPlayer.pause();
+                    AudioPlayerManager.instance.audioPlayer.pause();
                     setState(() {
                       _isPlaying = false;
                     });
                   } else if (_localCurrentSong != null) {
-                    // Usar _localCurrentSong en lugar de widget.currentSong
-                    widget.audioPlayer.play();
+                    AudioPlayerManager.instance.audioPlayer.play();
                     setState(() {
                       _isPlaying = true;
                     });
@@ -332,7 +342,7 @@ class _AudioPlayerWidgetState extends State<AudioPlayerWidget> {
             ],
           ),
 
-          if (AudioPlayerManager.instance.hasPreloadError)
+          if ((AudioPlayerManager.instance.hasPreloadError ?? false))
             Container(
               padding: const EdgeInsets.symmetric(
                 vertical: 8.0,
