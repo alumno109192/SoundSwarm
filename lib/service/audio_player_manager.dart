@@ -7,7 +7,6 @@ import 'package:just_audio_background/just_audio_background.dart';
 import 'package:soundswarm/model/youtube_video.dart';
 import 'package:soundswarm/service/audio_service.dart';
 import 'package:soundswarm/service/playlist_service.dart';
-import 'package:soundswarm/service/recent_songs_service.dart';
 
 class AudioPlayerManager extends ChangeNotifier {
   // Singleton instance
@@ -89,47 +88,17 @@ class AudioPlayerManager extends ChangeNotifier {
   // MÉTODO PRINCIPAL DE REPRODUCCIÓN - SIMPLIFICADO
   Future<void> playSong(BuildContext context, YouTubeVideo video) async {
     try {
-      // Actualizar estado
-      _currentSong = video;
-      _currentThumbnailUrl = video.thumbnailUrl;
-
-      // Notificar UI
-      onSongChanged?.call(video);
-      onThumbnailChanged?.call(video.thumbnailUrl);
-
-      // Guardar en caché y historial
-      //_saveToCache();
-      try {
-        RecentSongsService.addRecentSong(video);
-      } catch (e) {
-        // Ignorar errores no críticos
-      }
-
-      // Antes de reproducir, comprueba si el enlace es válido
-      String audioUrl;
+      // Obtener SIEMPRE un audioUrl fresco
       final audioService = AudioService();
+      String audioUrl = await audioService.getAudioUrl(video.videoId);
 
-      if (video.audioUrl != null && !video.isAudioUrlExpired) {
-        audioUrl = video.audioUrl!;
-        if (kDebugMode) {
-          print('Usando enlace de audio guardado: $audioUrl');
-        }
-      } else {
-        // Obtener URL de audio nueva si está caducada o no existe
-        audioUrl = await audioService.getAudioUrl(video.videoId);
-
-        // Actualizar el enlace en la canción (y opcionalmente en la base de datos)
-        _currentSong = video.copyWithAudioUrl(audioUrl);
-
-        if (kDebugMode) {
-          print('URL de audio nueva obtenida: $audioUrl');
-        }
+      if (audioUrl.isEmpty || !audioUrl.startsWith('http')) {
+        throw Exception('URL de audio inválida');
       }
 
-      // Detener reproducción actual
-      await _audioPlayer.stop();
+      // Probar la URL con un HEAD request (opcional, para debug)
+      // Puedes usar http.head(Uri.parse(audioUrl)) para verificar el Content-Type
 
-      // Crear MediaItem y reproducir
       final mediaItem = MediaItem(
         id: video.videoId,
         title: video.title,
@@ -137,82 +106,29 @@ class AudioPlayerManager extends ChangeNotifier {
         artUri: Uri.parse(video.thumbnailUrl),
       );
 
-      try {
-        // Método principal
-        try {
-          // Obtener SIEMPRE un audioUrl fresco
-          final audioService = AudioService();
-          String audioUrl = await audioService.getAudioUrl(video.videoId);
+      await _audioPlayer.stop();
+      await _audioPlayer.setAudioSource(
+        AudioSource.uri(Uri.parse(audioUrl), tag: mediaItem),
+      );
+      await _audioPlayer.play();
 
-          if (audioUrl.isEmpty || !audioUrl.startsWith('http')) {
-            throw Exception('URL de audio inválida');
-          }
+      _isPlaying = true;
+      onPlayStateChanged?.call(true);
 
-          await _audioPlayer.setAudioSource(
-            AudioSource.uri(Uri.parse(audioUrl), tag: mediaItem),
-          );
-          await _audioPlayer.play();
-          _isPlaying = true;
-          onPlayStateChanged?.call(true);
-        } catch (e) {
-          if (kDebugMode) {
-            print('Error al reproducir audio: $e');
-            print('Reintentando obtener URL de audio...');
-          }
-          // Reintentar una vez
-          try {
-            final audioService = AudioService();
-            String audioUrl = await audioService.getAudioUrl(video.videoId);
-            if (audioUrl.isEmpty || !audioUrl.startsWith('http')) {
-              throw Exception('URL de audio inválida');
-            }
-            await _audioPlayer.setAudioSource(
-              AudioSource.uri(Uri.parse(audioUrl), tag: mediaItem),
-            );
-            await _audioPlayer.play();
-            _isPlaying = true;
-            onPlayStateChanged?.call(true);
-          } catch (e) {
-            if (kDebugMode) {
-              print('Error definitivo al reproducir audio: $e');
-            }
-            // Notifica a la UI o muestra un mensaje de error
-          }
-        }
-      } catch (e) {
-        if (kDebugMode) {
-          print('Error al reproducir audio: $e');
-          print('Intentando método alternativo...');
-        }
-      }
+      // Notificar UI
+      onSongChanged?.call(video);
+      onThumbnailChanged?.call(video.thumbnailUrl);
 
-      // Cargar canciones relacionadas (mínimo)
-      if (_relatedSongs.isEmpty) {
-        _relatedSongs = [
-          _currentSong!,
-        ]; // Al menos incluir la canción actual con URL actualizada
-        _currentSongIndex = 0;
-      }
-
-      // Mostrar mensaje de éxito
-      if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Reproduciendo: ${video.title}')),
-        );
-      }
-
-      // Limpiar recursos
       audioService.dispose();
     } catch (e) {
       if (kDebugMode) {
-        print('Error general en playSong: $e');
+        print('Error definitivo al reproducir audio: $e');
+        print('URL obtenida: ${video.audioUrl}');
       }
       if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Error: ${e.toString().substring(0, 100)}...'),
-          ),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Error al reproducir: $e')));
       }
     }
   }
