@@ -7,7 +7,7 @@ import 'package:soundswarm/widgets/audio_player_widget.dart';
 Future<void> main() async {
   // Asegurarse de que los bindings están inicializados
   WidgetsFlutterBinding.ensureInitialized();
-  
+
   // Inicializar just_audio_background
   await JustAudioBackground.init(
     androidNotificationChannelId: 'com.example.sonicswap.channel.audio',
@@ -15,7 +15,7 @@ Future<void> main() async {
     androidNotificationOngoing: true,
     androidStopForegroundOnPause: true,
   );
-  
+
   runApp(const MyApp());
 }
 
@@ -50,7 +50,7 @@ class AppShell extends StatefulWidget {
 class _AppShellState extends State<AppShell> {
   // Singleton para toda la app
   final AudioPlayerManager _playerManager = AudioPlayerManager();
-  
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -68,22 +68,22 @@ class _AppShellState extends State<AppShell> {
               },
             ),
           ),
-          
+
           // Reproductor persistente en la parte inferior
           AudioPlayerWidget(
             audioPlayer: _playerManager.audioPlayer,
             currentSong: _playerManager.currentSong,
-            currentThumbnailUrl: _playerManager.currentThumbnailUrl,
-            onSongChanged: (song) {
-              setState(() {
-                // El manager ya mantiene actualizado el estado
-              });
-            },
-            onThumbnailChanged: (url) {
-              setState(() {
-                // El manager ya mantiene actualizado el estado
-              });
-            },
+            //currentThumbnailUrl: _playerManager.currentThumbnailUrl,
+            //onSongChanged: (song) {
+            // setState(() {
+            // El manager ya mantiene actualizado el estado
+            // });
+            //},
+            //onThumbnailChanged: (url) {
+            // setState(() {
+            // El manager ya mantiene actualizado el estado
+            //});
+            //},
           ),
         ],
       ),

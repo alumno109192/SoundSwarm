@@ -36,7 +36,7 @@ class AudioPlayerManager extends ChangeNotifier {
   get relatedSongs => _relatedSongs;
   int _currentSongIndex = 0;
   get currentSongIndex => _currentSongIndex;
-  final Duration _position = Duration.zero;
+  Duration _position = Duration.zero;
 
   // Getters
   bool get isInitialized => _isInitialized;
@@ -90,9 +90,11 @@ class AudioPlayerManager extends ChangeNotifier {
     try {
       // Obtener SIEMPRE un audioUrl fresco
       final audioService = AudioService();
-      String audioUrl = await audioService.getAudioUrl(video.videoId);
+      Map<String, dynamic> audioUrl = await audioService.getAudioUrl(
+        video.videoId,
+      );
 
-      if (audioUrl.isEmpty || !audioUrl.startsWith('http')) {
+      if (audioUrl.isEmpty || !audioUrl['streamUrl'].startsWith('http')) {
         throw Exception('URL de audio inválida');
       }
 
@@ -104,11 +106,15 @@ class AudioPlayerManager extends ChangeNotifier {
         title: video.title,
         artist: video.channelTitle,
         artUri: Uri.parse(video.thumbnailUrl),
+        duration:
+            audioUrl['duration'] != null
+                ? Duration(seconds: audioUrl['duration'])
+                : null, // Duración opcional
       );
 
       await _audioPlayer.stop();
       await _audioPlayer.setAudioSource(
-        AudioSource.uri(Uri.parse(audioUrl), tag: mediaItem),
+        AudioSource.uri(Uri.parse(audioUrl['streamUrl']), tag: mediaItem),
       );
       await _audioPlayer.play();
 
@@ -196,7 +202,8 @@ class AudioPlayerManager extends ChangeNotifier {
         if (kDebugMode) print('Usando URL en caché para: ${nextVideo.title}');
       } else {
         final audioService = AudioService();
-        audioUrl = await audioService.getAudioUrl(nextVideo.videoId);
+        final audioUrlMap = await audioService.getAudioUrl(nextVideo.videoId);
+        audioUrl = audioUrlMap['streamUrl'] as String;
         // Actualizar la canción en la lista con la nueva URL
         _relatedSongs[_currentSongIndex] = nextVideo.copyWithAudioUrl(audioUrl);
         audioService.dispose();
@@ -265,7 +272,7 @@ class AudioPlayerManager extends ChangeNotifier {
 
       // Reproducir
       await _audioPlayer.stop();
-      await _audioPlayer.setUrl(audioUrl);
+      await _audioPlayer.setUrl(audioUrl['streamUrl']);
       await _audioPlayer.play();
 
       _isPlaying = true;
@@ -504,5 +511,12 @@ class AudioPlayerManager extends ChangeNotifier {
         );
       }
     }
+  }
+
+  void setupPositionListener() {
+    _audioPlayer.positionStream.listen((position) {
+      _position = position;
+      notifyListeners();
+    });
   }
 }

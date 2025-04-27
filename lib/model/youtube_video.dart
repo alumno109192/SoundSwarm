@@ -4,7 +4,7 @@ class YouTubeVideo {
   final String channelTitle;
   final String thumbnailUrl;
   final String? description;
-  final Duration? duration;
+  Duration? duration;
   final DateTime? publishedAt;
 
   // Añadir estos campos para el enlace de audio

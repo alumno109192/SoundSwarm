@@ -1,42 +1,50 @@
 import 'package:flutter/foundation.dart';
 import 'package:youtube_explode_dart/youtube_explode_dart.dart';
+import 'package:soundswarm/service/fastapi_service.dart';
 
 class AudioService {
-  final YoutubeExplode _youtubeExplode = YoutubeExplode(); // Instancia persistente
+  final YoutubeExplode _youtubeExplode =
+      YoutubeExplode(); // Instancia persistente
+  final FastApiService _fastApiService =
+      FastApiService(); // Instancia del servicio FastAPI
 
-  Future<String> getAudioUrl(String videoId) async {
+  Future<Map<String, dynamic>> getAudioUrl(String videoId) async {
     try {
       if (kDebugMode) {
-        print('Obteniendo URL para video ID: $videoId');
+        print(
+          'Solicitando al servidor que descargue el audio para video ID: $videoId',
+        );
       }
-      
-      // Obtener el manifiesto de streams
-      final StreamManifest manifest = await _youtubeExplode.videos.streams.getManifest(videoId);
-      
-      // Filtrar para obtener solo streams de audio y ordenarlos por calidad
-      final audioStreams = manifest.audioOnly.sortByBitrate();
-      
-      if (audioStreams.isEmpty) {
-        if (kDebugMode) {
-          print('No se encontraron streams de audio');
-        }
-        throw Exception('No se encontraron streams de audio para este video');
+
+      // Llamar al endpoint del servidor para descargar la canción
+      final downloadUrl = await _fastApiService.getAudioUrl(videoId);
+
+      if (downloadUrl.isEmpty || !downloadUrl.startsWith('http')) {
+        throw Exception('URL de descarga inválida');
       }
-      
-      // Obtener el stream de mayor calidad
-      final audioStream = audioStreams.last;
-      final url = audioStream.url.toString();
-      
+
       if (kDebugMode) {
-        print('URL obtenida: $url');
+        print(
+          'El servidor ha iniciado la descarga. URL de descarga: $downloadUrl',
+        );
       }
-      
-      // Verificar que la URL sea válida
-      if (url.isEmpty) {
-        throw Exception('URL de audio vacía');
+
+      // Llamar al endpoint para obtener la URL de streaming y la duración
+      final streamInfo = await _fastApiService.getStreamUrl(videoId);
+
+      final streamUrl = streamInfo['streamUrl'];
+      final duration = streamInfo['duration'];
+
+      if (streamUrl.isEmpty || !streamUrl.startsWith('http')) {
+        throw Exception('URL de streaming inválida');
       }
-      
-      return url;
+
+      if (kDebugMode) {
+        print('URL de streaming obtenida: $streamUrl');
+        print('Duración del audio obtenida: $duration segundos');
+      }
+
+      return {'streamUrl': streamUrl, 'duration': duration};
     } catch (e) {
       if (kDebugMode) {
         print('Error en getAudioUrl: $e');
