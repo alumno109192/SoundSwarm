@@ -416,17 +416,22 @@ class AudioPlayerManager extends ChangeNotifier {
         context,
       ).showSnackBar(const SnackBar(content: Text('Cargando playlist...')));
 
-      // Reproducir la primera canción
-      await playSong(context, playlist.first);
+      // Reproducir cada canción en secuencia
+      for (int i = 0; i < playlist.length; i++) {
+        final song = playlist[i];
+        await playSong(context, song);
 
-      // Cargar todas las canciones en la lista de reproducción
-      AudioPlayerManager._instance.loadPlaylist(playlist);
-
-      // Notificar al usuario
-      if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Reproduciendo: ${playlist.first.title}')),
+        // Esperar a que la canción termine antes de continuar con la siguiente
+        await _audioPlayer.processingStateStream.firstWhere(
+          (state) => state == ProcessingState.completed,
         );
+      }
+
+      // Notificar al usuario cuando termine la playlist
+      if (context.mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('Playlist completada')));
       }
     } catch (e) {
       if (kDebugMode) {
