@@ -476,6 +476,9 @@ class AudioPlayerManager extends ChangeNotifier {
       return;
     }
 
+    // Lista para rastrear las últimas 5 canciones reproducidas
+    final List<YouTubeVideo> recentlyPlayed = [];
+
     try {
       // Mezclar la lista de canciones
       final random = Random();
@@ -487,20 +490,49 @@ class AudioPlayerManager extends ChangeNotifier {
         const SnackBar(content: Text('Cargando playlist aleatoria...')),
       );
 
-      // Reproducir la primera canción de la lista mezclada
-      await playSong(context, shuffledPlaylist.first);
+      // Función para reproducir la siguiente canción aleatoria
+      Future<void> playNextRandomSong() async {
+        // Filtrar canciones que no estén en las últimas 5 reproducidas
+        final availableSongs =
+            shuffledPlaylist
+                .where((song) => !recentlyPlayed.contains(song))
+                .toList();
 
-      // Cargar todas las canciones en la lista de reproducción mezclada
-      AudioPlayerManager._instance.loadPlaylist(shuffledPlaylist);
+        if (availableSongs.isEmpty) {
+          if (kDebugMode) {
+            print('No hay canciones disponibles fuera de las últimas 5');
+          }
+          return;
+        }
 
-      // Notificar al usuario
+        // Seleccionar una canción aleatoria de las disponibles
+        final nextSong = availableSongs[random.nextInt(availableSongs.length)];
+
+        // Reproducir la canción
+        await playSong(context, nextSong);
+
+        // Actualizar la lista de canciones reproducidas recientemente
+        recentlyPlayed.add(nextSong);
+        if (recentlyPlayed.length > 5) {
+          recentlyPlayed.removeAt(0); // Mantener solo las últimas 5 canciones
+        }
+
+        // Esperar a que la canción termine antes de reproducir la siguiente
+        await _audioPlayer.processingStateStream.firstWhere(
+          (state) => state == ProcessingState.completed,
+        );
+
+        // Llamar recursivamente para reproducir la siguiente canción
+        await playNextRandomSong();
+      }
+
+      // Reproducir la primera canción aleatoria
+      await playNextRandomSong();
+
+      // Notificar al usuario cuando termine la playlist
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              'Reproduciendo aleatoriamente: ${shuffledPlaylist.first.title}',
-            ),
-          ),
+          const SnackBar(content: Text('Playlist aleatoria completada')),
         );
       }
     } catch (e) {
