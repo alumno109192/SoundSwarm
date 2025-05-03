@@ -92,8 +92,10 @@ class _AudioPlayerWidgetState extends State<AudioPlayerWidget> {
                 child: ClipRRect(
                   borderRadius: BorderRadius.circular(8),
                   child: Image.network(
-                    key: Key(AudioPlayerManager().currentSong!.thumbnailUrl),
-                    AudioPlayerManager().currentSong!.thumbnailUrl,
+                    key: Key(
+                      AudioPlayerManager().currentSong?.thumbnailUrl ?? '',
+                    ),
+                    AudioPlayerManager().currentSong?.thumbnailUrl ?? '',
                     width: 50,
                     height: 50,
                     fit: BoxFit.cover,

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:soundswarm/screen/search_music_screen.dart';
 import 'package:soundswarm/screen/setting_screen.dart';
 import 'package:soundswarm/screen/playlists_screen.dart';
 
@@ -10,18 +11,14 @@ class AppDrawer extends StatefulWidget {
 }
 
 class _AppDrawerState extends State<AppDrawer> {
-
   @override
   Widget build(BuildContext context) {
-
     return Drawer(
       child: ListView(
         padding: EdgeInsets.zero,
         children: [
           DrawerHeader(
-            decoration: const BoxDecoration(
-              color: Colors.blue,
-            ),
+            decoration: const BoxDecoration(color: Colors.blue),
             child: Stack(
               children: [
                 Column(
@@ -36,7 +33,7 @@ class _AppDrawerState extends State<AppDrawer> {
                           child: Icon(Icons.person),
                         ),
                         const SizedBox(width: 10),
-                        
+
                         // Título de la app
                         const Text(
                           'SoundSwarm',
@@ -52,10 +49,7 @@ class _AppDrawerState extends State<AppDrawer> {
                     // Subtítulo o slogan
                     const Text(
                       'Tu música favorita',
-                      style: TextStyle(
-                        color: Colors.white70,
-                        fontSize: 14,
-                      ),
+                      style: TextStyle(color: Colors.white70, fontSize: 14),
                     ),
                   ],
                 ),
@@ -64,10 +58,7 @@ class _AppDrawerState extends State<AppDrawer> {
                   top: 0,
                   right: 0,
                   child: IconButton(
-                    icon: const Icon(
-                      Icons.close,
-                      color: Colors.white,
-                    ),
+                    icon: const Icon(Icons.close, color: Colors.white),
                     onPressed: () {
                       Navigator.pop(context); // Cierra el drawer
                     },
@@ -89,6 +80,12 @@ class _AppDrawerState extends State<AppDrawer> {
             onTap: () {
               Navigator.pop(context);
               // Navegar a la biblioteca si tienes esa pantalla
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => const SearchMusicScreen(),
+                ),
+              );
             },
           ),
           ListTile(
@@ -120,9 +117,7 @@ class _AppDrawerState extends State<AppDrawer> {
               Navigator.pop(context);
               Navigator.push(
                 context,
-                MaterialPageRoute(
-                  builder: (context) => const SettingsScreen(),
-                ),
+                MaterialPageRoute(builder: (context) => const SettingsScreen()),
               );
             },
           ),
