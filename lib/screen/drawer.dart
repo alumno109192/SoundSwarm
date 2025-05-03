@@ -37,7 +37,7 @@ class _AppDrawerState extends State<AppDrawer> {
 
                         // Título de la app
                         const Text(
-                          'SoundSwarm',
+                          'SounicSwap',
                           style: TextStyle(
                             color: Colors.white,
                             fontSize: 18,
