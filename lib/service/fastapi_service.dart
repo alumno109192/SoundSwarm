@@ -6,7 +6,7 @@ import 'package:soundswarm/model/youtube_video.dart';
 class FastApiService {
   // URL base para producción
   //final String _baseUrlPro = 'https://yt-dlp-uvag.onrender.com';
-  final String _baseUrlPro = 'http://192.168.0.100:8000';
+  final String _baseUrlPro = 'http://192.168.1.235:8000';
 
   /// Devuelve la URL directa al stream de audio servido por tu backend
   Future<String> getAudioUrl(String videoId) async {

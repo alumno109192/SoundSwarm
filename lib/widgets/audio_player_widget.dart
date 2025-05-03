@@ -76,78 +76,84 @@ class _AudioPlayerWidgetState extends State<AudioPlayerWidget> {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          // Slider de progreso
           Row(
-            mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              // Tiempo actual
-              Text(
-                _formatDuration(_currentPosition),
-                style: const TextStyle(fontSize: 12, color: Colors.white),
-              ),
-              Expanded(
-                child: Slider(
-                  min: 0,
-                  max: _songDuration.inSeconds.toDouble(),
-                  value: _currentPosition.inSeconds.toDouble().clamp(
-                    0,
-                    _songDuration.inSeconds.toDouble(),
-                  ),
-                  onChanged: (value) {
-                    final newPosition = Duration(seconds: value.toInt());
-                    widget.audioPlayer.seek(newPosition);
+              // Imagen de la canción actual
+              ClipRRect(
+                borderRadius: BorderRadius.circular(8),
+                child: Image.network(
+                  key: Key(AudioPlayerManager().currentSong!.thumbnailUrl),
+                  AudioPlayerManager().currentSong!.thumbnailUrl,
+                  width: 50,
+                  height: 50,
+                  fit: BoxFit.cover,
+                  errorBuilder: (context, error, stackTrace) {
+                    return const Icon(
+                      Icons.music_note,
+                      size: 50,
+                      color: Colors.white,
+                    );
                   },
-                  activeColor: Colors.blue,
-                  inactiveColor: Colors.grey,
                 ),
               ),
-              // Duración total
-              Text(
-                _formatDuration(_songDuration),
-                style: const TextStyle(fontSize: 12, color: Colors.white),
+
+              // Controles de reproducción
+              Expanded(
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                  children: [
+                    // Botón anterior
+                    IconButton(
+                      icon: const Icon(Icons.skip_previous, size: 32),
+                      color: Colors.white,
+                      onPressed: () {
+                        widget.audioPlayer.seek(Duration.zero);
+                      },
+                    ),
+                    // Botón de reproducir/pausar
+                    IconButton(
+                      icon: Icon(
+                        _isPlaying
+                            ? Icons.pause_circle_filled
+                            : Icons.play_circle_filled,
+                        size: 48,
+                      ),
+                      color: Colors.white,
+                      onPressed: () {
+                        if (_isPlaying) {
+                          widget.audioPlayer.pause();
+                        } else {
+                          widget.audioPlayer.play();
+                        }
+                      },
+                    ),
+                    // Botón siguiente
+                    IconButton(
+                      icon: const Icon(Icons.skip_next, size: 32),
+                      color: Colors.white,
+                      onPressed: () {
+                        AudioPlayerManager.instance.playNextSong();
+                      },
+                    ),
+                  ],
+                ),
               ),
             ],
           ),
-
-          // Controles de reproducción
-          Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              // Botón anterior
-              IconButton(
-                icon: const Icon(Icons.skip_previous, size: 32),
-                color: Colors.white,
-                onPressed: () {
-                  widget.audioPlayer.seek(Duration.zero);
-                },
-              ),
-              // Botón de reproducir/pausar
-              IconButton(
-                icon: Icon(
-                  _isPlaying
-                      ? Icons.pause_circle_filled
-                      : Icons.play_circle_filled,
-                  size: 48,
-                ),
-                color: Colors.white,
-                onPressed: () {
-                  if (_isPlaying) {
-                    widget.audioPlayer.pause();
-                  } else {
-                    widget.audioPlayer.play();
-                  }
-                },
-              ),
-              // Botón siguiente
-              IconButton(
-                icon: const Icon(Icons.skip_next, size: 32),
-                color: Colors.white,
-                onPressed: () {
-                  // Implementar lógica para reproducir la siguiente canción
-                  AudioPlayerManager.instance.playNextSong();
-                },
-              ),
-            ],
+          // Slider de progreso
+          Slider(
+            min: 0,
+            max: _songDuration.inSeconds.toDouble(),
+            value: _currentPosition.inSeconds.toDouble().clamp(
+              0,
+              _songDuration.inSeconds.toDouble(),
+            ),
+            onChanged: (value) {
+              final newPosition = Duration(seconds: value.toInt());
+              widget.audioPlayer.seek(newPosition);
+            },
+            activeColor: Colors.blue,
+            inactiveColor: Colors.grey,
           ),
         ],
       ),

@@ -298,6 +298,9 @@ class _PlaylistDetailScreenState extends State<PlaylistDetailScreen> {
       final playerManager =
           AudioPlayerManager
               .instance; // Replace with the appropriate named constructor
+      playerManager.setCurrentSong(song);
+      playerManager.setThumbnail(song.thumbnailUrl);
+
       playerManager.playSong(context, song);
 
       // No es necesario cerrar la pantalla

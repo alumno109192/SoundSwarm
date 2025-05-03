@@ -50,5 +50,7 @@
 		<string>audio</string>
 		<string>processing</string>
 	</array>
+	<key>com.apple.security.network.client</key>
+	<true/>
 </dict>
 </plist>
