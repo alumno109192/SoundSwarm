@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:soundswarm/model/youtube_video.dart';
 import 'package:soundswarm/service/audio_player_manager.dart';
+import 'package:soundswarm/main.dart'; // Importa la pantalla principal
 
 class AudioPlayerWidget extends StatefulWidget {
   final AudioPlayer audioPlayer;
@@ -78,24 +79,36 @@ class _AudioPlayerWidgetState extends State<AudioPlayerWidget> {
         children: [
           Row(
             children: [
-              // Imagen de la canción actual
-              ClipRRect(
-                borderRadius: BorderRadius.circular(8),
-                child: Image.network(
-                  key: Key(AudioPlayerManager().currentSong!.thumbnailUrl),
-                  AudioPlayerManager().currentSong!.thumbnailUrl,
-                  width: 50,
-                  height: 50,
-                  fit: BoxFit.cover,
-                  errorBuilder: (context, error, stackTrace) {
-                    return const Icon(
-                      Icons.music_note,
-                      size: 50,
-                      color: Colors.white,
-                    );
-                  },
+              // Imagen de la canción actual con GestureDetector
+              GestureDetector(
+                onTap: () {
+                  // Navegar a la pantalla principal
+                  Navigator.pushAndRemoveUntil(
+                    context,
+                    MaterialPageRoute(builder: (context) => const MyApp()),
+                    (route) => false, // Eliminar todas las rutas anteriores
+                  );
+                },
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(8),
+                  child: Image.network(
+                    key: Key(AudioPlayerManager().currentSong!.thumbnailUrl),
+                    AudioPlayerManager().currentSong!.thumbnailUrl,
+                    width: 50,
+                    height: 50,
+                    fit: BoxFit.cover,
+                    errorBuilder: (context, error, stackTrace) {
+                      return const Icon(
+                        Icons.music_note,
+                        size: 50,
+                        color: Colors.white,
+                      );
+                    },
+                  ),
                 ),
               ),
+
+              const SizedBox(width: 10),
 
               // Controles de reproducción
               Expanded(
