@@ -251,16 +251,13 @@ class PlaylistService {
   }
 
   // Guardar favoritos
-  static Future<void> _saveFavorites(List<YouTubeVideo> favorites) async {
+  static Future<void> _saveFavorites(YouTubeVideo song) async {
     try {
-      // Convertir favoritos a JSON
-      final favoritesJson = favorites.map((video) => video.toJson()).toList();
-
       // Guardar en archivo
-      await FileStorageService.saveToFile(_favoritesFileName, favoritesJson);
+      await FileStorageService.saveToFile(_favoritesFileName, song);
 
-      // Actualizar caché
-      _favoritesCache = favorites;
+      // Guardar el enlace de audio en la canción
+      await PlaylistService.addFavorite(song);
     } catch (e) {
       if (kDebugMode) {
         print('Error al guardar favoritos: $e');
@@ -285,12 +282,8 @@ class PlaylistService {
       if (favorites.any((video) => video.videoId == song.videoId)) {
         return; // Ya existe, no hacer nada
       }
-
-      // Añadir canción directamente - preservando el enlace si existe
-      favorites.add(song);
-
       // Guardar favoritos
-      await _saveFavorites(favorites);
+      await PlaylistDbService.addSongToFavorites(song);
 
       if (kDebugMode) {
         if (song.audioUrl != null) {
@@ -310,14 +303,7 @@ class PlaylistService {
   // Eliminar canción de favoritos
   static Future<void> removeFavorite(String videoId) async {
     try {
-      // Obtener favoritos
-      final favorites = await getFavorites();
-
-      // Eliminar canción
-      favorites.removeWhere((video) => video.videoId == videoId);
-
       // Guardar favoritos
-      await _saveFavorites(favorites);
     } catch (e) {
       if (kDebugMode) {
         print('Error al eliminar favorito: $e');

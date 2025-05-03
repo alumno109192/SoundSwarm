@@ -24,6 +24,16 @@ class PlaylistDbService {
             playlistId TEXT
           )
         ''');
+        await db.execute('''
+          CREATE TABLE IF NOT EXISTS favorites (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            videoId TEXT UNIQUE,
+            title TEXT,
+            channelTitle TEXT,
+            thumbnailUrl TEXT,
+            description TEXT
+          )
+        ''');
       },
     );
     return _db!;
@@ -131,5 +141,43 @@ class PlaylistDbService {
         );
       }
     }
+  }
+
+  // Métodos para manejar favoritos
+
+  /// Añadir una canción a favoritos
+  static Future<void> addSongToFavorites(YouTubeVideo song) async {
+    final db = await database;
+    await db.insert('favorites', {
+      'videoId': song.videoId,
+      'title': song.title,
+      'channelTitle': song.channelTitle,
+      'thumbnailUrl': song.thumbnailUrl,
+      'description': song.description,
+    }, conflictAlgorithm: ConflictAlgorithm.replace);
+  }
+
+  /// Eliminar una canción de favoritos
+  static Future<void> removeSongFromFavorites(String videoId) async {
+    final db = await database;
+    await db.delete('favorites', where: 'videoId = ?', whereArgs: [videoId]);
+  }
+
+  /// Obtener todas las canciones favoritas
+  static Future<List<YouTubeVideo>> getFavoriteSongs() async {
+    final db = await database;
+    final maps = await db.query('favorites');
+    return maps.map((map) => YouTubeVideo.fromMap(map)).toList();
+  }
+
+  /// Verificar si una canción está en favoritos
+  static Future<bool> isSongFavorite(String videoId) async {
+    final db = await database;
+    final result = await db.query(
+      'favorites',
+      where: 'videoId = ?',
+      whereArgs: [videoId],
+    );
+    return result.isNotEmpty;
   }
 }

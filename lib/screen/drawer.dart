@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:soundswarm/screen/favorites_screen.dart';
 import 'package:soundswarm/screen/search_music_screen.dart';
 import 'package:soundswarm/screen/setting_screen.dart';
 import 'package:soundswarm/screen/playlists_screen.dart';
@@ -107,6 +108,12 @@ class _AppDrawerState extends State<AppDrawer> {
             onTap: () {
               Navigator.pop(context);
               // Navegar a favoritos
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => const FavoritesScreen(),
+                ),
+              );
             },
           ),
           const Divider(),

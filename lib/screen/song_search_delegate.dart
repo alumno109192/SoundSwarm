@@ -9,13 +9,13 @@ import 'package:soundswarm/service/offline_mode_service.dart';
 import 'package:soundswarm/service/playlist_service.dart';
 import 'package:soundswarm/model/playlist.dart'; // Ensure Playlist is imported
 
-
 // Clase correcta del buscador
 class SongSearchDelegate extends SearchDelegate<String> {
   @override
   Widget buildSuggestions(BuildContext context) {
     // Provide suggestions based on the query
-    final suggestions = _searchHistory.where((history) => history.startsWith(query)).toList();
+    final suggestions =
+        _searchHistory.where((history) => history.startsWith(query)).toList();
 
     return ListView.builder(
       itemCount: suggestions.length,
@@ -31,14 +31,15 @@ class SongSearchDelegate extends SearchDelegate<String> {
       },
     );
   }
+
   // Reemplazar YouTubeApiService por MusicProvider
   final MusicProvider _musicProvider = MusicProvider();
   final Function(String) onThumbnailSelected;
   final Function(bool) onPlayStateChanged;
   final Function(YouTubeVideo)? onSongSelected;
-  
+
   List<String> _searchHistory = [];
-  
+
   // Constructor igual
   SongSearchDelegate({
     required this.onThumbnailSelected,
@@ -48,7 +49,7 @@ class SongSearchDelegate extends SearchDelegate<String> {
   }) {
     _loadSearchHistory();
   }
-  
+
   // Método para cargar el historial desde SharedPreferences
   Future<void> _loadSearchHistory() async {
     final prefs = await SharedPreferences.getInstance();
@@ -56,28 +57,28 @@ class SongSearchDelegate extends SearchDelegate<String> {
     // Forzar reconstrucción
     query = query;
   }
-  
+
   // Método para guardar una nueva búsqueda en el historial
   Future<void> _saveSearch(String query) async {
     if (query.trim().isEmpty) return;
-    
+
     final prefs = await SharedPreferences.getInstance();
-    
+
     // Remover la consulta si ya existe (para moverla al principio)
     _searchHistory.remove(query);
-    
+
     // Añadir la nueva consulta al principio
     _searchHistory.insert(0, query);
-    
+
     // Limitar el historial a 10 elementos
     if (_searchHistory.length > 10) {
       _searchHistory = _searchHistory.sublist(0, 10);
     }
-    
+
     // Guardar en SharedPreferences
     await prefs.setStringList('search_history', _searchHistory);
   }
-  
+
   @override
   List<Widget>? buildActions(BuildContext context) {
     return [
@@ -103,7 +104,7 @@ class SongSearchDelegate extends SearchDelegate<String> {
   @override
   Widget buildResults(BuildContext context) {
     _saveSearch(query);
-    
+
     return FutureBuilder<List<YouTubeVideo>>(
       // Reemplazar _apiService.searchVideos por _musicProvider.searchSongs
       future: _musicProvider.searchSongs(query),
@@ -115,9 +116,9 @@ class SongSearchDelegate extends SearchDelegate<String> {
               children: [
                 CircularProgressIndicator(),
                 SizedBox(height: 16),
-                Text('Buscando en múltiples fuentes...')
+                Text('Buscando en múltiples fuentes...'),
               ],
-            )
+            ),
           );
         } else if (snapshot.hasError) {
           return Center(
@@ -157,7 +158,7 @@ class SongSearchDelegate extends SearchDelegate<String> {
                 const SizedBox(height: 16),
                 const Text('No se encontraron resultados'),
                 const SizedBox(height: 16),
-                
+
                 // Opción para buscar en caché
                 if (!_musicProvider.isOfflineMode)
                   TextButton.icon(
@@ -165,7 +166,8 @@ class SongSearchDelegate extends SearchDelegate<String> {
                     label: const Text('Ver resultados guardados'),
                     onPressed: () async {
                       // Buscar en caché
-                      final cachedResults = await OfflineModeService.getSearchResults(query);
+                      final cachedResults =
+                          await OfflineModeService.getSearchResults(query);
                       if (cachedResults.isNotEmpty) {
                         _musicProvider.setOfflineMode(true);
                         showResults(context);
@@ -176,13 +178,17 @@ class SongSearchDelegate extends SearchDelegate<String> {
                       } else {
                         if (context.mounted) {
                           ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(content: Text('No hay resultados guardados para esta búsqueda'))
+                            const SnackBar(
+                              content: Text(
+                                'No hay resultados guardados para esta búsqueda',
+                              ),
+                            ),
                           );
                         }
                       }
                     },
                   ),
-                
+
                 // Botón para reintentar
                 ElevatedButton.icon(
                   icon: const Icon(Icons.refresh),
@@ -196,23 +202,26 @@ class SongSearchDelegate extends SearchDelegate<String> {
           );
         } else {
           final videos = snapshot.data!;
-          
+
           // Guardar en caché offline si no estamos en modo offline
           if (!_musicProvider.isOfflineMode) {
             OfflineModeService.saveRecentSearch(query, videos);
           }
-          
+
           return Column(
             children: [
               // Indicador de fuente de datos
               Container(
-                padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 16),
+                padding: const EdgeInsets.symmetric(
+                  vertical: 4,
+                  horizontal: 16,
+                ),
                 color: Colors.black54,
                 child: Row(
                   children: [
                     Icon(
-                      _musicProvider.isOfflineMode 
-                          ? Icons.offline_bolt 
+                      _musicProvider.isOfflineMode
+                          ? Icons.offline_bolt
                           : Icons.cloud_done,
                       size: 16,
                     ),
@@ -227,11 +236,15 @@ class SongSearchDelegate extends SearchDelegate<String> {
                     // Botón para alternar modo offline
                     TextButton.icon(
                       icon: Icon(
-                        _musicProvider.isOfflineMode ? Icons.cloud : Icons.offline_bolt,
-                        size: 16
+                        _musicProvider.isOfflineMode
+                            ? Icons.cloud
+                            : Icons.offline_bolt,
+                        size: 16,
                       ),
                       label: Text(
-                        _musicProvider.isOfflineMode ? 'Conectar' : 'Modo offline',
+                        _musicProvider.isOfflineMode
+                            ? 'Conectar'
+                            : 'Modo offline',
                         style: const TextStyle(fontSize: 12),
                       ),
                       style: TextButton.styleFrom(
@@ -239,7 +252,9 @@ class SongSearchDelegate extends SearchDelegate<String> {
                         minimumSize: Size.zero,
                       ),
                       onPressed: () {
-                        _musicProvider.setOfflineMode(!_musicProvider.isOfflineMode);
+                        _musicProvider.setOfflineMode(
+                          !_musicProvider.isOfflineMode,
+                        );
                         showResults(context);
                       },
                     ),
@@ -254,7 +269,7 @@ class SongSearchDelegate extends SearchDelegate<String> {
                     final video = videos[index];
                     return ListTile(
                       leading: Container(
-                        width: 60, 
+                        width: 60,
                         height: 45,
                         decoration: BoxDecoration(
                           color: Colors.grey[800],
@@ -284,37 +299,41 @@ class SongSearchDelegate extends SearchDelegate<String> {
                         try {
                           // Obtener instancia del manager
                           final playerManager = AudioPlayerManager.instance;
-                          
+
                           // Mostrar indicador de carga
                           if (context.mounted) {
                             ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(content: Text('Cargando audio...')),
+                              const SnackBar(
+                                content: Text('Cargando audio...'),
+                              ),
                             );
                           }
-                          
+
                           // Actualizar datos visuales inmediatamente
                           playerManager.setCurrentSong(video);
                           playerManager.setThumbnail(video.thumbnailUrl);
-                          
+
                           // Usar el método correcto
                           // Opción 1: Usar playSafe que toma una URL y un MediaItem
                           await playerManager.playSong(context, video);
-                          
+
                           // O Opción 2: Si playSong existe y toma estos parámetros
                           // await playerManager.playSong(context, video);
-                          
+
                           // Notificar cambio de estado de reproducción
                           playerManager.setPlayState(true);
-                          
+
                           if (context.mounted) {
                             // Cerrar la búsqueda
                             Navigator.pop(context);
-                            
+
                             ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(content: Text('Reproduciendo: ${video.title}')),
+                              SnackBar(
+                                content: Text('Reproduciendo: ${video.title}'),
+                              ),
                             );
                           }
-                          
+
                           // Cargar canciones relacionadas
                           playerManager.loadRelatedSongs(video.videoId);
                         } catch (e) {
@@ -322,15 +341,17 @@ class SongSearchDelegate extends SearchDelegate<String> {
                           if (kDebugMode) {
                             print('Error al reproducir: $e');
                           }
-                          
+
                           if (context.mounted) {
                             ScaffoldMessenger.of(context).showSnackBar(
                               SnackBar(
-                                content: Text('Error al conectar con el servidor. Intentando usar caché...'),
+                                content: Text(
+                                  'Error al conectar con el servidor. Intentando usar caché...',
+                                ),
                                 duration: const Duration(seconds: 2),
                               ),
                             );
-                            
+
                             // Intentar modo offline como fallback
                             _musicProvider.setOfflineMode(true);
                             showResults(context);
@@ -347,7 +368,7 @@ class SongSearchDelegate extends SearchDelegate<String> {
       },
     );
   }
-  
+
   // También actualizar el método _showSongOptions para usar MusicProvider
   void _showSongOptions(BuildContext context, YouTubeVideo video) {
     showModalBottomSheet(
@@ -358,7 +379,7 @@ class SongSearchDelegate extends SearchDelegate<String> {
           builder: (context, snapshot) {
             // Usar el valor del Future o false si aún no está disponible
             final isFavorite = snapshot.data ?? false;
-            
+
             return Column(
               mainAxisSize: MainAxisSize.min,
               children: [
@@ -370,31 +391,33 @@ class SongSearchDelegate extends SearchDelegate<String> {
                     try {
                       // Obtener instancia del manager
                       final playerManager = AudioPlayerManager.instance;
-                      
+
                       // Mostrar indicador de carga
                       ScaffoldMessenger.of(context).showSnackBar(
                         const SnackBar(content: Text('Cargando audio...')),
                       );
-                      
+
                       // Actualizar datos visuales inmediatamente
                       playerManager.setCurrentSong(video);
                       playerManager.setThumbnail(video.thumbnailUrl);
-                      
+
                       // Reproducción segura con manejo de errores integrado
                       await playerManager.playSong(context, video);
-                      
+
                       // Notificar cambio de estado de reproducción
                       playerManager.setPlayState(true);
-                      
+
                       if (context.mounted) {
                         // Cerrar la búsqueda
                         Navigator.pop(context);
-                        
+
                         ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(content: Text('Reproduciendo: ${video.title}')),
+                          SnackBar(
+                            content: Text('Reproduciendo: ${video.title}'),
+                          ),
                         );
                       }
-                      
+
                       // Cargar canciones relacionadas
                       playerManager.loadRelatedSongs(video.videoId);
                     } catch (e) {
@@ -402,18 +425,20 @@ class SongSearchDelegate extends SearchDelegate<String> {
                       if (kDebugMode) {
                         print('Error al reproducir: $e');
                       }
-                      
+
                       if (context.mounted) {
                         ScaffoldMessenger.of(context).showSnackBar(
                           SnackBar(
-                            content: Text('Error al reproducir. Intentando usar datos guardados...'),
+                            content: Text(
+                              'Error al reproducir. Intentando usar datos guardados...',
+                            ),
                             duration: const Duration(seconds: 2),
                           ),
                         );
-                        
+
                         // Intentar modo offline como fallback
                         _musicProvider.setOfflineMode(true);
-                        
+
                         // No reintentar automáticamente para evitar bucles
                       }
                     }
@@ -437,20 +462,28 @@ class SongSearchDelegate extends SearchDelegate<String> {
                   onTap: () async {
                     Navigator.pop(context);
                     // Obtener el estado actualizado
-                    final currentIsFavorite = await PlaylistService.isFavorite(video.videoId);
-                    
+                    final currentIsFavorite = await PlaylistService.isFavorite(
+                      video.videoId,
+                    );
+
                     if (currentIsFavorite) {
                       await PlaylistService.removeFavorite(video.videoId);
                       if (context.mounted) {
                         ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(content: Text('${video.title} quitada de favoritos')),
+                          SnackBar(
+                            content: Text(
+                              '${video.title} quitada de favoritos',
+                            ),
+                          ),
                         );
                       }
                     } else {
                       await PlaylistService.addFavorite(video);
                       if (context.mounted) {
                         ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(content: Text('${video.title} añadida a favoritos')),
+                          SnackBar(
+                            content: Text('${video.title} añadida a favoritos'),
+                          ),
                         );
                       }
                     }
@@ -466,7 +499,7 @@ class SongSearchDelegate extends SearchDelegate<String> {
 
   void _showAddToPlaylistDialog(BuildContext context, YouTubeVideo video) {
     final playlists = PlaylistService.getPlaylists();
-    
+
     showDialog(
       context: context,
       builder: (context) {
@@ -481,7 +514,9 @@ class SongSearchDelegate extends SearchDelegate<String> {
                 if (snapshot.connectionState == ConnectionState.waiting) {
                   return const Center(child: CircularProgressIndicator());
                 } else if (snapshot.hasError) {
-                  return const Center(child: Text('Error al cargar las listas'));
+                  return const Center(
+                    child: Text('Error al cargar las listas'),
+                  );
                 } else if (!snapshot.hasData || snapshot.data!.isEmpty) {
                   return const Center(child: Text('No tienes listas creadas'));
                 } else {
@@ -495,28 +530,36 @@ class SongSearchDelegate extends SearchDelegate<String> {
                         title: Text(playlist.name),
                         onTap: () async {
                           Navigator.pop(context);
-                          
+
                           // Comprobar si la canción ya está en la lista
                           bool songExists = playlist.songs.any(
-                            (song) => song.videoId == video.videoId
+                            (song) => song.videoId == video.videoId,
                           );
-                          
+
                           if (songExists) {
                             if (!context.mounted) return;
                             ScaffoldMessenger.of(context).showSnackBar(
                               SnackBar(
-                                content: Text('${video.title} ya está en ${playlist.name}'),
+                                content: Text(
+                                  '${video.title} ya está en ${playlist.name}',
+                                ),
                               ),
                             );
                             return;
                           }
-                          
-                          await PlaylistService.addSongToPlaylist(playlist.id, video);
-                          
-                          if (context.mounted) {  // Correcto para BuildContext pasado como parámetro
+
+                          await PlaylistService.addSongToPlaylist(
+                            playlist.id,
+                            video,
+                          );
+
+                          if (context.mounted) {
+                            // Correcto para BuildContext pasado como parámetro
                             ScaffoldMessenger.of(context).showSnackBar(
                               SnackBar(
-                                content: Text('${video.title} añadida a ${playlist.name}'),
+                                content: Text(
+                                  '${video.title} añadida a ${playlist.name}',
+                                ),
                               ),
                             );
                           }
@@ -552,66 +595,67 @@ class SongSearchDelegate extends SearchDelegate<String> {
 
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Nueva lista'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TextField(
-              controller: nameController,
-              decoration: const InputDecoration(
-                labelText: 'Nombre',
-                hintText: 'Ej: Mis favoritas',
-              ),
-              autofocus: true,
+      builder:
+          (context) => AlertDialog(
+            title: const Text('Nueva lista'),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextField(
+                  controller: nameController,
+                  decoration: const InputDecoration(
+                    labelText: 'Nombre',
+                    hintText: 'Ej: Mis favoritas',
+                  ),
+                  autofocus: true,
+                ),
+                const SizedBox(height: 8),
+                TextField(
+                  controller: descriptionController,
+                  decoration: const InputDecoration(
+                    labelText: 'Descripción (opcional)',
+                    hintText: 'Ej: Canciones para el gimnasio',
+                  ),
+                  maxLines: 2,
+                ),
+              ],
             ),
-            const SizedBox(height: 8),
-            TextField(
-              controller: descriptionController,
-              decoration: const InputDecoration(
-                labelText: 'Descripción (opcional)',
-                hintText: 'Ej: Canciones para el gimnasio',
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('Cancelar'),
               ),
-              maxLines: 2,
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cancelar'),
+              TextButton(
+                onPressed: () async {
+                  final name = nameController.text.trim();
+                  if (name.isNotEmpty) {
+                    final description =
+                        descriptionController.text.trim().isNotEmpty
+                            ? descriptionController.text.trim()
+                            : null;
+
+                    Navigator.pop(context);
+
+                    final playlist = await PlaylistService.createPlaylist(
+                      name,
+                      description: description,
+                    );
+
+                    await PlaylistService.addSongToPlaylist(playlist.id, video);
+
+                    if (context.mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text('${video.title} añadida a $name'),
+                        ),
+                      );
+                    }
+                  }
+                },
+                child: const Text('Crear'),
+              ),
+            ],
           ),
-          TextButton(
-            onPressed: () async {
-              final name = nameController.text.trim();
-              if (name.isNotEmpty) {
-                final description = descriptionController.text.trim().isNotEmpty
-                    ? descriptionController.text.trim()
-                    : null;
-                
-                Navigator.pop(context);
-                
-                final playlist = await PlaylistService.createPlaylist(
-                  name, 
-                  description: description,
-                );
-                
-                await PlaylistService.addSongToPlaylist(playlist.id, video);
-                
-                if (context.mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                      content: Text('${video.title} añadida a $name'),
-                    ),
-                  );
-                }
-              }
-            },
-            child: const Text('Crear'),
-          ),
-        ],
-      ),
     );
   }
-
 }
