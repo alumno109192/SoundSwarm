@@ -52,5 +52,7 @@
 	</array>
 	<key>com.apple.security.network.client</key>
 	<true/>
+	<key>NSApplePayUsageDescription</key>
+	<string>Esta aplicación utiliza Apple Pay para procesar pagos de forma segura.</string>
 </dict>
 </plist>
