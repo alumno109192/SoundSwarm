@@ -1,13 +1,16 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
 import 'package:just_audio/just_audio.dart';
+import 'package:pay/pay.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:soundswarm/model/youtube_video.dart';
 import 'package:soundswarm/service/audio_player_manager.dart';
+import 'package:soundswarm/service/fastapi_service.dart';
 import 'package:soundswarm/service/music_provider.dart';
 import 'package:soundswarm/service/offline_mode_service.dart';
 import 'package:soundswarm/service/playlist_service.dart';
 import 'package:soundswarm/model/playlist.dart'; // Ensure Playlist is imported
+import 'package:dio/dio.dart';
 
 // Clase correcta del buscador
 class SongSearchDelegate extends SearchDelegate<String> {
@@ -489,6 +492,14 @@ class SongSearchDelegate extends SearchDelegate<String> {
                     }
                   },
                 ),
+                ListTile(
+                  leading: const Icon(Icons.download),
+                  title: const Text('Descargar (Pago)'),
+                  onTap: () async {
+                    Navigator.pop(context);
+                    await _handleDownload(context, video);
+                  },
+                ),
               ],
             );
           },
@@ -656,6 +667,154 @@ class SongSearchDelegate extends SearchDelegate<String> {
               ),
             ],
           ),
+    );
+  }
+
+  Future<void> _handleDownload(BuildContext context, YouTubeVideo video) async {
+    try {
+      // Inicia el flujo de pago
+      final paymentResult = await _startPayment(context, video);
+
+      if (paymentResult) {
+        // Si el pago es exitoso, muestra el panel para seleccionar la ubicación
+        final downloadPath = await _showDownloadLocationDialog(context);
+
+        if (downloadPath != null) {
+          // Procede con la descarga si se seleccionó una ubicación
+          await _downloadSong(video, downloadPath);
+
+          if (context.mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text(
+                  '${video.title} descargada con éxito en $downloadPath',
+                ),
+              ),
+            );
+          }
+        } else {
+          if (context.mounted) {
+            ScaffoldMessenger.of(
+              context,
+            ).showSnackBar(const SnackBar(content: Text('Descarga cancelada')));
+          }
+        }
+      } else {
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('El pago fue cancelado o falló')),
+          );
+        }
+      }
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error al descargar la canción: $e')),
+        );
+      }
+    }
+  }
+
+  Future<bool> _startPayment(BuildContext context, YouTubeVideo video) async {
+    try {
+      final paymentItems = [
+        PaymentItem(
+          label: video.title,
+          amount: '1.99', // Precio de la descarga
+          status: PaymentItemStatus.final_price,
+        ),
+      ];
+
+      // Configuración de Google Pay
+      final paymentConfiguration = await PaymentConfiguration.fromAsset(
+        'assets/google_play_connect.json',
+      );
+
+      final result = await GooglePayButton(
+        paymentConfiguration: paymentConfiguration,
+        paymentItems: paymentItems,
+        onPaymentResult: (result) {
+          print('Resultado del pago: $result');
+        },
+        onError: (error) {
+          print('Error en el pago: $error');
+        },
+      );
+
+      // Si el pago es exitoso, devuelve true
+      return result != null;
+    } catch (e) {
+      print('Error en el flujo de pago: $e');
+      return false;
+    }
+  }
+
+  Future<void> _downloadSong(YouTubeVideo video, String downloadPath) async {
+    try {
+      // Obtén la URL del audio
+      final audioUrl = await FastApiService().getAudioUrl(video.videoId);
+
+      // Nombre del archivo basado en el título de la canción
+      final fileName = '${video.title.replaceAll(' ', '_')}.mp3';
+      final filePath = '$downloadPath/$fileName';
+
+      // Usa Dio para descargar el archivo
+      final dio = Dio();
+      await dio.download(
+        audioUrl,
+        filePath,
+        onReceiveProgress: (received, total) {
+          if (total != -1) {
+            print('Progreso: ${(received / total * 100).toStringAsFixed(0)}%');
+          }
+        },
+      );
+
+      print('Canción descargada: $filePath');
+    } catch (e) {
+      print('Error al descargar la canción: $e');
+      throw Exception('Error al descargar la canción');
+    }
+  }
+
+  Future<String?> _showDownloadLocationDialog(BuildContext context) async {
+    String? selectedPath;
+
+    return showModalBottomSheet<String>(
+      context: context,
+      builder: (context) {
+        return Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const ListTile(title: Text('Selecciona la ubicación de descarga')),
+            ListTile(
+              leading: const Icon(Icons.folder),
+              title: const Text('Carpeta predeterminada'),
+              onTap: () {
+                selectedPath =
+                    '/storage/emulated/0/sonicswap'; // Carpeta predeterminada
+                Navigator.pop(context, selectedPath);
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.sd_storage),
+              title: const Text('Tarjeta SD'),
+              onTap: () {
+                selectedPath =
+                    '/storage/sdcard1/Downloads'; // Carpeta en la tarjeta SD
+                Navigator.pop(context, selectedPath);
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.cancel),
+              title: const Text('Cancelar'),
+              onTap: () {
+                Navigator.pop(context, null); // Cancela la selección
+              },
+            ),
+          ],
+        );
+      },
     );
   }
 }
