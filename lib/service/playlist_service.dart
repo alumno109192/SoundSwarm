@@ -250,22 +250,6 @@ class PlaylistService {
     }
   }
 
-  // Guardar favoritos
-  static Future<void> _saveFavorites(YouTubeVideo song) async {
-    try {
-      // Guardar en archivo
-      await FileStorageService.saveToFile(_favoritesFileName, song);
-
-      // Guardar el enlace de audio en la canción
-      await PlaylistService.addFavorite(song);
-    } catch (e) {
-      if (kDebugMode) {
-        print('Error al guardar favoritos: $e');
-      }
-      rethrow;
-    }
-  }
-
   // Verificar si una canción es favorita
   static Future<bool> isFavorite(String videoId) async {
     final favorites = await getFavorites();

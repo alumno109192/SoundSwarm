@@ -729,22 +729,30 @@ class SongSearchDelegate extends SearchDelegate<String> {
       final paymentConfiguration = await PaymentConfiguration.fromAsset(
         'assets/google_play_connect.json',
       );
-
-      final result = await GooglePayButton(
+      bool isPayed = false;
+      GooglePayButton(
         paymentConfiguration: paymentConfiguration,
         paymentItems: paymentItems,
         onPaymentResult: (result) {
-          print('Resultado del pago: $result');
+          if (kDebugMode) {
+            print('Resultado del pago: $result');
+          }
+          // Handle the result here without returning a value
+          isPayed = true;
         },
         onError: (error) {
-          print('Error en el pago: $error');
+          if (kDebugMode) {
+            print('Error en el pago: $error');
+          }
+          isPayed = false;
         },
       );
 
-      // Si el pago es exitoso, devuelve true
-      return result != null;
+      return isPayed;
     } catch (e) {
-      print('Error en el flujo de pago: $e');
+      if (kDebugMode) {
+        print('Error en el flujo de pago: $e');
+      }
       return false;
     }
   }
@@ -765,14 +773,22 @@ class SongSearchDelegate extends SearchDelegate<String> {
         filePath,
         onReceiveProgress: (received, total) {
           if (total != -1) {
-            print('Progreso: ${(received / total * 100).toStringAsFixed(0)}%');
+            if (kDebugMode) {
+              print(
+                'Progreso: ${(received / total * 100).toStringAsFixed(0)}%',
+              );
+            }
           }
         },
       );
 
-      print('Canción descargada: $filePath');
+      if (kDebugMode) {
+        print('Canción descargada: $filePath');
+      }
     } catch (e) {
-      print('Error al descargar la canción: $e');
+      if (kDebugMode) {
+        print('Error al descargar la canción: $e');
+      }
       throw Exception('Error al descargar la canción');
     }
   }

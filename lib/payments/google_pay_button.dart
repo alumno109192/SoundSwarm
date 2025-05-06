@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:pay/pay.dart';
@@ -6,7 +7,7 @@ import 'package:pay/pay.dart';
 class GooglePayButtonWidget extends StatelessWidget {
   final bool isProduction; // Define si es producción o test
 
-  GooglePayButtonWidget({this.isProduction = false});
+  const GooglePayButtonWidget({super.key, this.isProduction = false});
 
   @override
   Widget build(BuildContext context) {
@@ -42,11 +43,15 @@ class GooglePayButtonWidget extends StatelessWidget {
           type: GooglePayButtonType.pay,
           margin: const EdgeInsets.only(top: 15.0),
           onPaymentResult: (Map<String, dynamic> result) {
-            print('Resultado del pago: $result');
+            if (kDebugMode) {
+              print('Resultado del pago: $result');
+            }
           },
           loadingIndicator: const CircularProgressIndicator(),
           onError: (error) {
-            print('Error en el pago: $error');
+            if (kDebugMode) {
+              print('Error en el pago: $error');
+            }
           },
         );
       },

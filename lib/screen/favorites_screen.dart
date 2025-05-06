@@ -79,12 +79,12 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
                         },
                       ),
                     ),
-                    title: Text(song.title ?? 'Sin título'),
-                    subtitle: Text(song.channelTitle ?? 'Artista desconocido'),
+                    title: Text(song.title),
+                    subtitle: Text(song.channelTitle),
                     trailing: IconButton(
                       icon: const Icon(Icons.delete, color: Colors.red),
                       onPressed: () async {
-                        await _deleteFavorite(song.videoId!);
+                        await _deleteFavorite(song.videoId);
                         setState(() {
                           _favoriteSongs.removeAt(index);
                         });
