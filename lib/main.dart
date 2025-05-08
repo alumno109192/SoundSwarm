@@ -35,7 +35,7 @@ Future<void> _initializeApp() async {
 
   // Crear el directorio para guardar la música descargada
   final directory = await getApplicationSupportDirectory();
-  final downloadDirectory = Directory('${directory?.path}/SonicSwapMusic');
+  final downloadDirectory = Directory('${directory.path}/SonicSwapMusic');
   if (!await downloadDirectory.exists()) {
     await downloadDirectory.create(recursive: true);
     if (kDebugMode) {

@@ -1,6 +1,8 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:path_provider/path_provider.dart';
+import 'package:just_audio/just_audio.dart';
+import 'package:just_audio_background/just_audio_background.dart';
 
 class DownloadsScreen extends StatefulWidget {
   const DownloadsScreen({super.key});
@@ -11,11 +13,19 @@ class DownloadsScreen extends StatefulWidget {
 
 class _DownloadsScreenState extends State<DownloadsScreen> {
   List<FileSystemEntity> downloadedFiles = [];
+  final AudioPlayer _audioPlayer = AudioPlayer();
 
   @override
   void initState() {
     super.initState();
     _loadDownloadedFiles();
+  }
+
+  @override
+  void dispose() {
+    _audioPlayer
+        .dispose(); // Libera el reproductor de audio al cerrar la pantalla
+    super.dispose();
   }
 
   Future<void> _loadDownloadedFiles() async {
@@ -63,6 +73,37 @@ class _DownloadsScreenState extends State<DownloadsScreen> {
     }
   }
 
+  Future<void> _playFile(File file) async {
+    try {
+      // Crea un MediaItem para el archivo de audio
+      final mediaItem = MediaItem(
+        id: file.path,
+        title: file.path.split('/').last, // Nombre del archivo como título
+        artist: 'Desconocido', // Puedes personalizar el artista
+        album: 'Descargas', // Puedes personalizar el álbum
+        artUri: Uri.parse(
+          'https://example.com/default_artwork.png',
+        ), // Imagen predeterminada
+      );
+
+      // Configura el archivo con el MediaItem
+      await _audioPlayer.setAudioSource(
+        AudioSource.file(file.path, tag: mediaItem),
+      );
+
+      // Reproduce el archivo
+      await _audioPlayer.play();
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Reproduciendo: ${file.path.split('/').last}')),
+      );
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error al reproducir el archivo: $e')),
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -84,9 +125,21 @@ class _DownloadsScreenState extends State<DownloadsScreen> {
                   return ListTile(
                     leading: const Icon(Icons.music_note),
                     title: Text(fileName),
-                    trailing: IconButton(
-                      icon: const Icon(Icons.delete, color: Colors.red),
-                      onPressed: () => _deleteFile(File(file.path)),
+                    trailing: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        IconButton(
+                          icon: const Icon(
+                            Icons.play_arrow,
+                            color: Colors.green,
+                          ),
+                          onPressed: () => _playFile(File(file.path)),
+                        ),
+                        IconButton(
+                          icon: const Icon(Icons.delete, color: Colors.red),
+                          onPressed: () => _deleteFile(File(file.path)),
+                        ),
+                      ],
                     ),
                   );
                 },
