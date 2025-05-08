@@ -1,8 +1,12 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:just_audio_background/just_audio_background.dart';
 import 'package:soundswarm/screen/home_screen.dart';
 import 'package:soundswarm/service/audio_player_manager.dart';
 import 'package:soundswarm/widgets/audio_player_widget.dart';
+import 'package:permission_handler/permission_handler.dart';
+import 'package:path_provider/path_provider.dart';
+import 'dart:io';
 
 Future<void> main() async {
   // Asegurarse de que los bindings están inicializados
@@ -16,7 +20,32 @@ Future<void> main() async {
     androidStopForegroundOnPause: true,
   );
 
+  // Solicitar permisos y crear el directorio
+  await _initializeApp();
+
   runApp(const MyApp());
+}
+
+Future<void> _initializeApp() async {
+  // Solicitar permisos de almacenamiento
+  final status = await Permission.storage.request();
+  if (!status.isGranted) {
+    throw Exception('Permiso de almacenamiento denegado');
+  }
+
+  // Crear el directorio para guardar la música descargada
+  final directory = await getApplicationSupportDirectory();
+  final downloadDirectory = Directory('${directory?.path}/SonicSwapMusic');
+  if (!await downloadDirectory.exists()) {
+    await downloadDirectory.create(recursive: true);
+    if (kDebugMode) {
+      print('Directorio creado: ${downloadDirectory.path}');
+    }
+  } else {
+    if (kDebugMode) {
+      print('El directorio ya existe: ${downloadDirectory.path}');
+    }
+  }
 }
 
 class MyApp extends StatelessWidget {

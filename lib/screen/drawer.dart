@@ -3,6 +3,7 @@ import 'package:soundswarm/screen/favorites_screen.dart';
 import 'package:soundswarm/screen/search_music_screen.dart';
 import 'package:soundswarm/screen/setting_screen.dart';
 import 'package:soundswarm/screen/playlists_screen.dart';
+import 'package:soundswarm/screen/downloads_screen.dart'; // Asegúrate de importar la pantalla de descargas
 
 class AppDrawer extends StatefulWidget {
   const AppDrawer({super.key});
@@ -28,14 +29,11 @@ class _AppDrawerState extends State<AppDrawer> {
                   children: [
                     Row(
                       children: [
-                        // Avatar simplificado
                         const CircleAvatar(
                           backgroundColor: Colors.white,
                           child: Icon(Icons.person),
                         ),
                         const SizedBox(width: 10),
-
-                        // Título de la app
                         const Text(
                           'SounicSwap',
                           style: TextStyle(
@@ -47,21 +45,19 @@ class _AppDrawerState extends State<AppDrawer> {
                       ],
                     ),
                     const SizedBox(height: 10),
-                    // Subtítulo o slogan
                     const Text(
                       'Tu música favorita',
                       style: TextStyle(color: Colors.white70, fontSize: 14),
                     ),
                   ],
                 ),
-                // Botón de cierre en la esquina superior derecha
                 Positioned(
                   top: 0,
                   right: 0,
                   child: IconButton(
                     icon: const Icon(Icons.close, color: Colors.white),
                     onPressed: () {
-                      Navigator.pop(context); // Cierra el drawer
+                      Navigator.pop(context);
                     },
                   ),
                 ),
@@ -80,7 +76,6 @@ class _AppDrawerState extends State<AppDrawer> {
             title: const Text('Mi Biblioteca'),
             onTap: () {
               Navigator.pop(context);
-              // Navegar a la biblioteca si tienes esa pantalla
               Navigator.push(
                 context,
                 MaterialPageRoute(
@@ -107,11 +102,23 @@ class _AppDrawerState extends State<AppDrawer> {
             title: const Text('Favoritos'),
             onTap: () {
               Navigator.pop(context);
-              // Navegar a favoritos
               Navigator.push(
                 context,
                 MaterialPageRoute(
                   builder: (context) => const FavoritesScreen(),
+                ),
+              );
+            },
+          ),
+          ListTile(
+            leading: const Icon(Icons.download),
+            title: const Text('Descargas'),
+            onTap: () {
+              Navigator.pop(context);
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => const DownloadsScreen(),
                 ),
               );
             },

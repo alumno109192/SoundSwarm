@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
 import 'package:just_audio/just_audio.dart';
@@ -13,6 +15,7 @@ import 'package:soundswarm/model/playlist.dart'; // Ensure Playlist is imported
 import 'package:dio/dio.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:file_picker/file_picker.dart';
+import 'package:path_provider/path_provider.dart';
 
 // Clase correcta del buscador
 class SongSearchDelegate extends SearchDelegate<String> {
@@ -782,6 +785,15 @@ class SongSearchDelegate extends SearchDelegate<String> {
       throw Exception('Permiso de almacenamiento denegado');
     }
 
+    // Obtén el directorio predeterminado
+    final directory = await getApplicationSupportDirectory();
+    final defaultDirectory = Directory('${directory.path}/SonicSwapMusic');
+
+    // Asegúrate de que el directorio predeterminado exista
+    if (!await defaultDirectory.exists()) {
+      await defaultDirectory.create(recursive: true);
+    }
+
     return await showDialog<String>(
       context: context,
       builder: (context) {
@@ -793,10 +805,20 @@ class SongSearchDelegate extends SearchDelegate<String> {
               ListTile(
                 leading: const Icon(Icons.folder),
                 title: const Text('Carpeta predeterminada'),
-                onTap: () {
+                onTap: () async {
                   selectedPath =
-                      '/storage/emulated/0/sonicswap'; // Carpeta predeterminada
+                      defaultDirectory.path; // Carpeta predeterminada
                   Navigator.pop(context, selectedPath);
+                  await _downloadSong(video, selectedPath!);
+                  if (context.mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text(
+                          '${video.title} descargada en $selectedPath',
+                        ),
+                      ),
+                    );
+                  }
                 },
               ),
               ListTile(
