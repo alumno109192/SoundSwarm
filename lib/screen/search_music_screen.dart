@@ -190,12 +190,10 @@ class _SearchMusicScreenState extends State<SearchMusicScreen>
   // Método para seleccionar un directorio
   Future<void> _pickDirectory() async {
     String? directoryPath = await FilePicker.platform.getDirectoryPath();
-    if (directoryPath != null) {
-      setState(() {
-        _selectedDirectory = directoryPath;
-        _directoryFiles = _getMusicFilesFromDirectory(directoryPath);
-      });
-    }
+    setState(() {
+      _selectedDirectory = directoryPath;
+      _directoryFiles = _getMusicFilesFromDirectory(directoryPath!);
+    });
   }
 
   // Simulación de obtención de archivos de música en un directorio

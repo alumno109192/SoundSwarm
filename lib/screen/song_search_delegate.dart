@@ -11,6 +11,8 @@ import 'package:soundswarm/service/offline_mode_service.dart';
 import 'package:soundswarm/service/playlist_service.dart';
 import 'package:soundswarm/model/playlist.dart'; // Ensure Playlist is imported
 import 'package:dio/dio.dart';
+import 'package:permission_handler/permission_handler.dart';
+import 'package:file_picker/file_picker.dart';
 
 // Clase correcta del buscador
 class SongSearchDelegate extends SearchDelegate<String> {
@@ -496,8 +498,14 @@ class SongSearchDelegate extends SearchDelegate<String> {
                   leading: const Icon(Icons.download),
                   title: const Text('Descargar (Pago)'),
                   onTap: () async {
-                    Navigator.pop(context);
-                    await _handleDownload(context, video);
+                    bool isPayed = await _showPaymentOptionsDialog(
+                      context,
+                      video,
+                    );
+                    if (isPayed) {
+                      // Mostrar diálogo para seleccionar la ubicación de descarga
+                      _showSaveDownloadDialog(context, video);
+                    }
                   },
                 ),
               ],
@@ -670,88 +678,23 @@ class SongSearchDelegate extends SearchDelegate<String> {
     );
   }
 
-  Future<void> _handleDownload(BuildContext context, YouTubeVideo video) async {
+  Future<bool> _startPayPalPayment(
+    BuildContext context,
+    YouTubeVideo video,
+  ) async {
     try {
-      // Inicia el flujo de pago
-      final paymentResult = await _startPayment(context, video);
-
-      if (paymentResult) {
-        // Si el pago es exitoso, muestra el panel para seleccionar la ubicación
-        final downloadPath = await _showDownloadLocationDialog(context);
-
-        if (downloadPath != null) {
-          // Procede con la descarga si se seleccionó una ubicación
-          await _downloadSong(video, downloadPath);
-
-          if (context.mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(
-                content: Text(
-                  '${video.title} descargada con éxito en $downloadPath',
-                ),
-              ),
-            );
-          }
-        } else {
-          if (context.mounted) {
-            ScaffoldMessenger.of(
-              context,
-            ).showSnackBar(const SnackBar(content: Text('Descarga cancelada')));
-          }
-        }
-      } else {
-        if (context.mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('El pago fue cancelado o falló')),
-          );
-        }
+      // Aquí puedes implementar la lógica de PayPal
+      // Por ejemplo, abrir una página web para procesar el pago
+      if (kDebugMode) {
+        print('Iniciando pago con PayPal para: ${video.title}');
       }
-    } catch (e) {
-      if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error al descargar la canción: $e')),
-        );
-      }
-    }
-  }
 
-  Future<bool> _startPayment(BuildContext context, YouTubeVideo video) async {
-    try {
-      final paymentItems = [
-        PaymentItem(
-          label: video.title,
-          amount: '1.99', // Precio de la descarga
-          status: PaymentItemStatus.final_price,
-        ),
-      ];
-
-      // Configuración de Google Pay
-      final paymentConfiguration = await PaymentConfiguration.fromAsset(
-        'assets/google_play_connect.json',
-      );
-      bool isPayed = false;
-      GooglePayButton(
-        paymentConfiguration: paymentConfiguration,
-        paymentItems: paymentItems,
-        onPaymentResult: (result) {
-          if (kDebugMode) {
-            print('Resultado del pago: $result');
-          }
-          // Handle the result here without returning a value
-          isPayed = true;
-        },
-        onError: (error) {
-          if (kDebugMode) {
-            print('Error en el pago: $error');
-          }
-          isPayed = false;
-        },
-      );
-
-      return isPayed;
+      // Simula un pago exitoso
+      await Future.delayed(const Duration(seconds: 2));
+      return true;
     } catch (e) {
       if (kDebugMode) {
-        print('Error en el flujo de pago: $e');
+        print('Error en el pago con PayPal: $e');
       }
       return false;
     }
@@ -793,44 +736,262 @@ class SongSearchDelegate extends SearchDelegate<String> {
     }
   }
 
-  Future<String?> _showDownloadLocationDialog(BuildContext context) async {
-    String? selectedPath;
+  Future<bool> _showManualPaymentDialog(BuildContext context) async {
+    final controller = TextEditingController();
 
-    return showModalBottomSheet<String>(
+    return await showDialog<bool>(
+          context: context,
+          builder: (context) {
+            return AlertDialog(
+              title: const Text('Pago manual'),
+              content: TextField(
+                controller: controller,
+                decoration: const InputDecoration(
+                  labelText: 'Ingresa un código de pago',
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(context, false),
+                  child: const Text('Cancelar'),
+                ),
+                TextButton(
+                  onPressed: () {
+                    if (controller.text.isNotEmpty) {
+                      Navigator.pop(context, true); // Simula un pago exitoso
+                    } else {
+                      Navigator.pop(context, false); // Simula un pago fallido
+                    }
+                  },
+                  child: const Text('Confirmar'),
+                ),
+              ],
+            );
+          },
+        ) ??
+        false;
+  }
+
+  Future<String?> _showSaveDownloadDialog(
+    BuildContext context,
+    YouTubeVideo video,
+  ) async {
+    String? selectedPath;
+    final hasPermission = await _requestStoragePermission();
+    if (!hasPermission) {
+      throw Exception('Permiso de almacenamiento denegado');
+    }
+
+    return await showDialog<String>(
       context: context,
       builder: (context) {
-        return Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const ListTile(title: Text('Selecciona la ubicación de descarga')),
-            ListTile(
-              leading: const Icon(Icons.folder),
-              title: const Text('Carpeta predeterminada'),
-              onTap: () {
-                selectedPath =
-                    '/storage/emulated/0/sonicswap'; // Carpeta predeterminada
-                Navigator.pop(context, selectedPath);
-              },
-            ),
-            ListTile(
-              leading: const Icon(Icons.sd_storage),
-              title: const Text('Tarjeta SD'),
-              onTap: () {
-                selectedPath =
-                    '/storage/sdcard1/Downloads'; // Carpeta en la tarjeta SD
-                Navigator.pop(context, selectedPath);
-              },
-            ),
-            ListTile(
-              leading: const Icon(Icons.cancel),
-              title: const Text('Cancelar'),
-              onTap: () {
-                Navigator.pop(context, null); // Cancela la selección
-              },
+        return AlertDialog(
+          title: const Text('Selecciona la ubicación de descarga'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              ListTile(
+                leading: const Icon(Icons.folder),
+                title: const Text('Carpeta predeterminada'),
+                onTap: () {
+                  selectedPath =
+                      '/storage/emulated/0/sonicswap'; // Carpeta predeterminada
+                  Navigator.pop(context, selectedPath);
+                },
+              ),
+              ListTile(
+                leading: const Icon(Icons.sd_storage),
+                title: const Text('Tarjeta SD'),
+                onTap: () {
+                  selectedPath =
+                      '/storage/sdcard1/Downloads'; // Carpeta en la tarjeta SD
+                  Navigator.pop(context, selectedPath);
+                },
+              ),
+              ListTile(
+                leading: const Icon(Icons.search),
+                title: const Text('Seleccionar carpeta'),
+                onTap: () async {
+                  Navigator.pop(context); // Cierra el diálogo actual
+                  final directoryPath =
+                      await FilePicker.platform.getDirectoryPath();
+                  if (directoryPath != null) {
+                    selectedPath = directoryPath;
+                    await _downloadSong(video, selectedPath!);
+                    if (context.mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text(
+                            '${video.title} descargada en $selectedPath',
+                          ),
+                        ),
+                      );
+                    }
+                  }
+                },
+              ),
+              ListTile(
+                leading: const Icon(Icons.cancel),
+                title: const Text('Cancelar'),
+                onTap: () {
+                  Navigator.pop(context, null); // Cancela la selección
+                },
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, null),
+              child: const Text('Cerrar'),
             ),
           ],
         );
       },
     );
+  }
+
+  Future<bool> _startGooglePayPayment(
+    BuildContext context,
+    YouTubeVideo video,
+  ) async {
+    try {
+      final paymentItems = [
+        PaymentItem(
+          label: video.title,
+          amount: '1.99', // Precio de la descarga
+          status: PaymentItemStatus.final_price,
+        ),
+      ];
+
+      // Determinar el entorno (TEST o PRODUCTION)
+      final environment = kDebugMode ? 'test' : 'production';
+      final googlePayConfigFileName =
+          environment == 'test'
+              ? 'json/google_pay_config_test.json'
+              : 'json/google_pay_config_production.json';
+
+      // Cargar la configuración de Google Pay desde el archivo JSON
+      final googlePayConfiguration = await PaymentConfiguration.fromAsset(
+        googlePayConfigFileName,
+      );
+
+      bool isPayed = false;
+
+      // Mostrar el diálogo con Google Pay
+      await showDialog(
+        context: context,
+        builder: (context) {
+          return AlertDialog(
+            title: const Text('Pagar con Google Pay'),
+            content: GooglePayButton(
+              paymentConfiguration: googlePayConfiguration,
+              paymentItems: paymentItems,
+              onPaymentResult: (result) {
+                if (kDebugMode) {
+                  print('Resultado del pago con Google Pay: $result');
+                }
+                isPayed = true;
+                Navigator.pop(context); // Cierra el diálogo después del pago
+              },
+              onError: (error) {
+                if (kDebugMode) {
+                  print('Error en el pago con Google Pay: $error');
+                }
+                isPayed = false;
+                Navigator.pop(context); // Cierra el diálogo en caso de error
+              },
+              loadingIndicator: const CircularProgressIndicator(),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('Cancelar'),
+              ),
+            ],
+          );
+        },
+      );
+
+      return isPayed;
+    } catch (e) {
+      if (kDebugMode) {
+        print('Error en el flujo de pago con Google Pay: $e');
+      }
+      return false;
+    }
+  }
+
+  Future<bool> _showPaymentOptionsDialog(
+    BuildContext context,
+    YouTubeVideo video,
+  ) async {
+    bool isPayed = false;
+
+    await showDialog(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: const Text('Selecciona un método de pago'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              // Opción de Google Pay
+              ElevatedButton.icon(
+                icon: const Icon(Icons.payment),
+                label: const Text('Pagar con Google Pay'),
+                onPressed: () async {
+                  Navigator.pop(context); // Cierra el diálogo
+                  isPayed = await _startGooglePayPayment(context, video);
+                },
+              ),
+              const SizedBox(height: 16),
+
+              // Opción de PayPal
+              ElevatedButton.icon(
+                icon: const Icon(Icons.account_balance_wallet),
+                label: const Text('Pagar con PayPal'),
+                onPressed: () async {
+                  Navigator.pop(context); // Cierra el diálogo
+                  isPayed = await _startPayPalPayment(context, video);
+                },
+              ),
+              const SizedBox(height: 16),
+
+              // Opción de pago manual
+              ElevatedButton.icon(
+                icon: const Icon(Icons.edit),
+                label: const Text('Pago manual'),
+                onPressed: () async {
+                  Navigator.pop(context); // Cierra el diálogo
+                  isPayed = await _showManualPaymentDialog(context);
+                },
+              ),
+              // Opción para simular un pago exitoso
+              ElevatedButton.icon(
+                icon: const Icon(Icons.check_circle),
+                label: const Text('Simular pago exitoso'),
+                onPressed: () {
+                  Navigator.pop(context); // Cierra el diálogo
+                  isPayed = true; // Simula un pago exitoso
+                },
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('Cancelar'),
+            ),
+          ],
+        );
+      },
+    );
+
+    return isPayed;
+  }
+
+  Future<bool> _requestStoragePermission() async {
+    final status = await Permission.storage.request();
+    return status.isGranted;
   }
 }

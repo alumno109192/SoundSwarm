@@ -54,5 +54,9 @@
 	<true/>
 	<key>NSApplePayUsageDescription</key>
 	<string>Esta aplicación utiliza Apple Pay para procesar pagos de forma segura.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>Esta aplicación necesita acceso a la biblioteca para guardar canciones.</string>
+	<key>NSDocumentsFolderUsageDescription</key>
+	<string>Esta aplicación necesita acceso a los documentos para guardar canciones.</string>
 </dict>
 </plist>
