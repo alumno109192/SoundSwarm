@@ -10,6 +10,7 @@ import 'package:soundswarm/service/audio_player_manager.dart';
 import 'package:soundswarm/service/fastapi_service.dart';
 import 'package:soundswarm/service/music_provider.dart';
 import 'package:soundswarm/service/offline_mode_service.dart';
+import 'package:soundswarm/service/playlist_db_service.dart';
 import 'package:soundswarm/service/playlist_service.dart';
 import 'package:soundswarm/model/playlist.dart'; // Ensure Playlist is imported
 import 'package:dio/dio.dart';
@@ -727,6 +728,8 @@ class SongSearchDelegate extends SearchDelegate<String> {
           }
         },
       );
+      // Guarda la canción en SQLite
+      await PlaylistDbService().saveSongToDatabase(video, filePath);
 
       if (kDebugMode) {
         print('Canción descargada: $filePath');
@@ -735,7 +738,6 @@ class SongSearchDelegate extends SearchDelegate<String> {
       if (kDebugMode) {
         print('Error al descargar la canción: $e');
       }
-      throw Exception('Error al descargar la canción');
     }
   }
 

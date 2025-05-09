@@ -1,3 +1,4 @@
+import 'package:dio/dio.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
@@ -107,5 +108,15 @@ class FastApiService {
         channelTitle: 'Example Channel 1',
       ),
     ];
+  }
+
+  Future<Map<String, dynamic>> getSongInfo(String videoId) async {
+    final response = await Dio().get('$_baseUrlPro/download/$videoId');
+
+    if (response.statusCode == 200) {
+      return response.data;
+    } else {
+      throw Exception('Error al obtener la información de la canción');
+    }
   }
 }

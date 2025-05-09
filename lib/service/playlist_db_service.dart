@@ -1,68 +1,118 @@
+import 'package:flutter/foundation.dart';
 import 'package:soundswarm/model/playlist.dart';
 import 'package:sqflite/sqflite.dart';
 import 'package:path/path.dart';
 import '../model/youtube_video.dart';
+import 'dart:io';
 
 class PlaylistDbService {
   static Database? _db;
-
   static Future<Database> get database async {
-    if (_db != null) return _db!;
-    final dbPath = await getDatabasesPath();
-    final path = join(dbPath, 'playlists.db');
-    _db = await openDatabase(
-      path,
-      version: 1,
-      onCreate: (db, version) async {
-        await db.execute('''
-          CREATE TABLE songs(
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            videoId TEXT,
-            title TEXT,
-            thumbnailUrl TEXT,
-            audioUrl TEXT,
-            playlistId TEXT
-          )
-        ''');
-        await db.execute('''
-          CREATE TABLE IF NOT EXISTS favorites (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            videoId TEXT UNIQUE,
-            title TEXT,
-            channelTitle TEXT,
-            thumbnailUrl TEXT,
-            description TEXT
-          )
-        ''');
-      },
-    );
+    if (_db != null) {
+      listTables();
+      return _db!;
+    }
+    _db = await _getDatabase();
     return _db!;
+  }
+
+  static Future<void> closeDatabase() async {
+    if (_db != null) {
+      await _db!.close();
+      _db = null;
+    }
   }
 
   static Future<Database> _getDatabase() async {
     final dbPath = await getDatabasesPath();
-    final path = join(dbPath, 'soundswarm.db');
+    final path = join(dbPath, 'sonicswap.db');
     return openDatabase(
       path,
-      version: 1,
+      version: 1, // Incrementa la versión de la base de datos
       onCreate: (db, version) async {
-        await db.execute('''
-        CREATE TABLE IF NOT EXISTS songs (
-          id INTEGER PRIMARY KEY AUTOINCREMENT,
-          videoId TEXT,
-          title TEXT,
-          channelTitle TEXT,
-          thumbnailUrl TEXT,
-          description TEXT,
-          durationSeconds INTEGER,
-          publishedAt TEXT,
-          audioUrl TEXT,
-          audioUrlTimestamp INTEGER,
-          playlistId TEXT
-        )
-      ''');
+        await _createTables(db);
+        if (kDebugMode) {
+          print('Base de datos creada y tablas inicializadas.');
+        }
+      },
+      onUpgrade: (db, oldVersion, newVersion) async {
+        await _createTables(db);
+        if (kDebugMode) {
+          print(
+            'Base de datos actualizada de la versión $oldVersion a $newVersion.',
+          );
+        }
       },
     );
+  }
+
+  static Future<void> _createTables(Database db) async {
+    // Crear tabla de canciones
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS songs (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        videoId TEXT,
+        title TEXT,
+        channelTitle TEXT,
+        thumbnailUrl TEXT,
+        description TEXT,
+        durationSeconds INTEGER,
+        publishedAt TEXT,
+        audioUrl TEXT,
+        audioUrlTimestamp INTEGER,
+        playlistId TEXT
+      )
+    ''');
+
+    // Crear tabla de descargas
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS downloads (
+        id TEXT UNIQUE,
+        title TEXT,
+        audioUrl TEXT,
+        thumbnailUrl TEXT
+      )
+    ''');
+
+    // Crear tabla de favoritos
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS favorites (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        videoId TEXT UNIQUE,
+        title TEXT,
+        channelTitle TEXT,
+        thumbnailUrl TEXT,
+        description TEXT
+      )
+    ''');
+
+    // Crear tabla de playlists
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS playlists (
+        id TEXT PRIMARY KEY,
+        name TEXT,
+        description TEXT
+      )
+    ''');
+
+    // Crear tabla de canciones en playlists
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS playlist_songs (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        playlistId TEXT,
+        videoId TEXT,
+        title TEXT,
+        channelTitle TEXT,
+        thumbnailUrl TEXT,
+        description TEXT,
+        durationSeconds INTEGER,
+        publishedAt TEXT,
+        audioUrl TEXT,
+        audioUrlTimestamp INTEGER
+      )
+    ''');
+
+    print('Todas las tablas han sido creadas o ya existen.');
   }
 
   static Future<void> addSongToPlaylist(
@@ -179,5 +229,93 @@ class PlaylistDbService {
       whereArgs: [videoId],
     );
     return result.isNotEmpty;
+  }
+
+  Future<void> saveSongToDatabase(
+    YouTubeVideo songInfo,
+    String filePath,
+  ) async {
+    final db = await database;
+
+    // Convierte el objeto YouTubeVideo a un mapa
+    final songMap = {
+      'id': songInfo.videoId,
+      'title': songInfo.title,
+      'audioUrl': filePath,
+      'thumbnailUrl': songInfo.thumbnailUrl,
+    };
+
+    // Inserta la canción en la base de datos
+    await db.insert(
+      'downloads',
+      songMap,
+      conflictAlgorithm: ConflictAlgorithm.replace,
+    );
+  }
+
+  Future<List<Map<String, dynamic>>> getDownloadedSongs() async {
+    final db = await openDatabase('sonicswap.db');
+    return await db.query('downloads');
+  }
+
+  Future<void> deleteDownloadSongById(String id) async {
+    final db = await openDatabase('sonicswap.db');
+    await db.delete('downloads', where: 'id = ?', whereArgs: [id]);
+  }
+
+  static Future<void> listTables() async {
+    final db = await _getDatabase();
+    final tables = await db.rawQuery(
+      "SELECT name FROM sqlite_master WHERE type='table'",
+    );
+    for (var table in tables) {
+      if (kDebugMode) {
+        print('Tabla encontrada: ${table['name']}');
+      }
+    }
+  }
+
+  static Future<void> listTableColumns() async {
+    final db = await _getDatabase();
+
+    // Obtén todas las tablas en la base de datos
+    final tables = await db.rawQuery(
+      "SELECT name FROM sqlite_master WHERE type='table'",
+    );
+
+    for (var table in tables) {
+      final tableName = table['name'];
+      if (kDebugMode) {
+        print('Tabla: $tableName');
+      }
+
+      // Obtén las columnas de la tabla
+      final columns = await db.rawQuery('PRAGMA table_info($tableName)');
+      for (var column in columns) {
+        if (kDebugMode) {
+          print(
+            '  Columna: ${column['name']}, Tipo: ${column['type']}, '
+            'Clave primaria: ${column['pk'] == 1 ? 'Sí' : 'No'}',
+          );
+        }
+      }
+    }
+  }
+
+  Future<void> deleteDatabaseFile() async {
+    final dbPath = await getDatabasesPath();
+    final path = join(dbPath, 'sonicswap.db');
+    final file = File(path);
+
+    if (await file.exists()) {
+      await file.delete();
+      if (kDebugMode) {
+        print('Base de datos eliminada: $path');
+      }
+    } else {
+      if (kDebugMode) {
+        print('No se encontró la base de datos para eliminar.');
+      }
+    }
   }
 }
