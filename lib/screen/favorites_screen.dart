@@ -1,8 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:soundswarm/model/youtube_video.dart';
 import 'package:soundswarm/service/playlist_db_service.dart';
-import 'package:sqflite/sqflite.dart';
-import 'package:path/path.dart';
+import 'package:soundswarm/service/audio_player_manager.dart';
 
 class FavoritesScreen extends StatefulWidget {
   const FavoritesScreen({super.key});
@@ -23,7 +22,6 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
   Future<void> _loadFavorites() async {
     final List<YouTubeVideo> songs = await PlaylistDbService.getFavoriteSongs();
     if (songs.isEmpty) {
-      // Si no hay canciones favoritas, mostrar un mensaje
       setState(() {
         _favoriteSongs = [];
       });
@@ -34,16 +32,22 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
     });
   }
 
-  Future<Database> _getDatabase() async {
-    return openDatabase(
-      join(await getDatabasesPath(), 'sonicswap.db'),
-      onCreate: (db, version) {
-        return db.execute(
-          'CREATE TABLE favorites(id INTEGER PRIMARY KEY, title TEXT, artist TEXT, thumbnailUrl TEXT)',
-        );
-      },
-      version: 1,
-    );
+  Future<void> _deleteFavorite(String id) async {
+    final database = await PlaylistDbService.database;
+    await database.delete('favorites', where: 'videoId = ?', whereArgs: [id]);
+  }
+
+  Future<void> _playSong(YouTubeVideo song) async {
+    try {
+      await AudioPlayerManager().playSong(context, song);
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Reproduciendo: ${song.title}')));
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error al reproducir la canción: $e')),
+      );
+    }
   }
 
   @override
@@ -81,32 +85,39 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
                     ),
                     title: Text(song.title),
                     subtitle: Text(song.channelTitle),
-                    trailing: IconButton(
-                      icon: const Icon(Icons.delete, color: Colors.red),
-                      onPressed: () async {
-                        await _deleteFavorite(song.videoId);
-                        setState(() {
-                          _favoriteSongs.removeAt(index);
-                        });
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(
-                            content: const Text(
-                              'Canción eliminada de favoritos',
-                            ),
-                            duration: const Duration(seconds: 2),
+                    trailing: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        IconButton(
+                          icon: const Icon(
+                            Icons.play_arrow,
+                            color: Colors.green,
                           ),
-                        );
-                        _loadFavorites(); // Recargar la lista después de eliminar
-                      },
+                          onPressed: () => _playSong(song),
+                        ),
+                        IconButton(
+                          icon: const Icon(Icons.delete, color: Colors.red),
+                          onPressed: () async {
+                            await _deleteFavorite(song.videoId);
+                            setState(() {
+                              _favoriteSongs.removeAt(index);
+                            });
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(
+                                content: const Text(
+                                  'Canción eliminada de favoritos',
+                                ),
+                                duration: const Duration(seconds: 2),
+                              ),
+                            );
+                            _loadFavorites(); // Recargar la lista después de eliminar
+                          },
+                        ),
+                      ],
                     ),
                   );
                 },
               ),
     );
-  }
-
-  Future<void> _deleteFavorite(String id) async {
-    final database = await _getDatabase();
-    await database.delete('favorites', where: 'id = ?', whereArgs: [id]);
   }
 }
