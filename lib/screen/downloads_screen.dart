@@ -74,21 +74,18 @@ class _DownloadsScreenState extends State<DownloadsScreen> {
     }
   }
 
-  Future<void> _playSong(Map<String, dynamic> song) async {
+  Future<void> _playSong(Map<String, dynamic> songClick) async {
     try {
-      // Crea un objeto YouTubeVideo a partir de la información de la canción
-      final video = YouTubeVideo(
-        videoId: song['id'],
-        title: song['title'],
-        duration: song['duration'] ?? 0,
-        channelTitle: song['channelTitle'] ?? 'Canal desconocido', // Agregado
-        thumbnailUrl:
-            song['thumbnailUrl'] ??
-            'https://example.com/default_thumbnail.png', // Agregado
+      final YouTubeVideo video = await PlaylistDbService().getDownloadSongById(
+        songClick['id'],
       );
 
       // Llama al servicio AudioPlayerManager para reproducir la canción
-      await AudioPlayerManager().playSong(context, video);
+      await AudioPlayerManager().playSongFromFile(
+        context,
+        video.audioUrl!,
+        video,
+      );
 
       // Verifica si el widget sigue montado antes de usar el contexto
       if (!mounted) return;

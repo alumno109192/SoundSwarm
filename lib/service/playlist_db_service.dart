@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 import 'package:soundswarm/model/playlist.dart';
 import 'package:sqflite/sqflite.dart';
@@ -256,6 +258,21 @@ class PlaylistDbService {
   Future<List<Map<String, dynamic>>> getDownloadedSongs() async {
     final db = await openDatabase('sonicswap.db');
     return await db.query('downloads');
+  }
+
+  FutureOr<YouTubeVideo> getDownloadSongById(String id) async {
+    final db = await openDatabase('sonicswap.db');
+    final result = await db.query(
+      'downloads',
+      where: 'id = ?',
+      whereArgs: [id],
+    );
+
+    if (result.isNotEmpty) {
+      return YouTubeVideo.fromMap(result.first);
+    } else {
+      throw Exception('No song found with id: $id');
+    }
   }
 
   Future<void> deleteDownloadSongById(String id) async {

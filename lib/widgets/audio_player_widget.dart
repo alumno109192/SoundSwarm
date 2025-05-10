@@ -32,23 +32,32 @@ class _AudioPlayerWidgetState extends State<AudioPlayerWidget> {
   void _setupAudioPlayerListeners() {
     // Listener para el estado de reproducción
     widget.audioPlayer.playingStream.listen((isPlaying) {
-      setState(() {
-        _isPlaying = isPlaying;
-      });
+      if (mounted) {
+        // Verifica si el widget está montado antes de llamar a setState
+        setState(() {
+          _isPlaying = isPlaying;
+        });
+      }
     });
 
     // Listener para la posición actual
     widget.audioPlayer.positionStream.listen((position) {
-      setState(() {
-        _currentPosition = position;
-      });
+      if (mounted) {
+        // Verifica si el widget está montado antes de llamar a setState
+        setState(() {
+          _currentPosition = position;
+        });
+      }
     });
 
     // Listener para la duración de la canción
     widget.audioPlayer.durationStream.listen((duration) {
-      setState(() {
-        _songDuration = duration ?? Duration.zero;
-      });
+      if (mounted) {
+        // Verifica si el widget está montado antes de llamar a setState
+        setState(() {
+          _songDuration = duration ?? Duration.zero;
+        });
+      }
     });
   }
 

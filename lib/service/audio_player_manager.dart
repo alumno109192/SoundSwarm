@@ -4,9 +4,11 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:just_audio_background/just_audio_background.dart';
+import 'package:path_provider/path_provider.dart';
 import 'package:soundswarm/model/youtube_video.dart';
 import 'package:soundswarm/service/audio_service.dart';
 import 'package:soundswarm/service/playlist_service.dart';
+import 'dart:io';
 
 class AudioPlayerManager extends ChangeNotifier {
   // Singleton instance
@@ -116,7 +118,6 @@ class AudioPlayerManager extends ChangeNotifier {
       await _audioPlayer.setAudioSource(
         AudioSource.uri(Uri.parse(audioUrl['streamUrl']), tag: mediaItem),
       );
-      await _audioPlayer.play();
 
       _isPlaying = true;
       onPlayStateChanged?.call(true);
@@ -124,6 +125,7 @@ class AudioPlayerManager extends ChangeNotifier {
       // Notificar UI
       onSongChanged?.call(video);
       onThumbnailChanged?.call(video.thumbnailUrl);
+      await _audioPlayer.play();
 
       audioService.dispose();
     } catch (e) {
@@ -135,6 +137,72 @@ class AudioPlayerManager extends ChangeNotifier {
         ScaffoldMessenger.of(
           context,
         ).showSnackBar(SnackBar(content: Text('Error al reproducir: $e')));
+      }
+    }
+  }
+
+  Future<void> playSongFromFile(
+    BuildContext context,
+    String relativePath,
+    YouTubeVideo video,
+  ) async {
+    try {
+      // Reconstruye la ruta absoluta
+      final filePath = await getAbsolutePath(video.title);
+
+      // Verifica si el archivo existe
+      final file = File(filePath!);
+      if (!await file.exists()) {
+        throw Exception(
+          'El archivo no existe en la ruta especificada: $filePath',
+        );
+      }
+
+      // Crea un MediaItem para la canción
+      final mediaItem = MediaItem(
+        id: video.videoId,
+        title: video.title,
+        artist: video.channelTitle,
+        artUri: Uri.parse(video.thumbnailUrl),
+        duration:
+            video.duration != null
+                ? Duration(seconds: video.duration!.inSeconds)
+                : null,
+      );
+
+      // Detén cualquier reproducción actual
+      await _audioPlayer.stop();
+
+      // Configura el archivo local como fuente de audio
+      await _audioPlayer.setAudioSource(
+        AudioSource.uri(Uri.file(filePath), tag: mediaItem),
+      );
+
+      _isPlaying = true;
+      onPlayStateChanged?.call(true);
+      _currentSong = video;
+      _currentThumbnailUrl = video.thumbnailUrl;
+      _relatedSongs = [_currentSong!];
+      _currentSongIndex = 0;
+      _position = Duration.zero;
+      // Notifica a la UI sobre la canción actual y la miniatura
+      onSongChanged?.call(video);
+      onThumbnailChanged?.call(video.thumbnailUrl);
+
+      // Inicia la reproducción
+      await _audioPlayer.play();
+
+      if (kDebugMode) {
+        print('Reproduciendo archivo local: $filePath');
+      }
+    } catch (e) {
+      if (kDebugMode) {
+        print('Error al reproducir archivo local: $e');
+      }
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error al reproducir archivo local: $e')),
+        );
       }
     }
   }
@@ -556,4 +624,55 @@ class AudioPlayerManager extends ChangeNotifier {
       notifyListeners();
     });
   }
+}
+
+Future<String?> getAbsolutePath(String title) async {
+  try {
+    // Obtén el directorio de soporte de la aplicación
+    final directory = await getApplicationSupportDirectory();
+    final musicDirectory = Directory('${directory.path}/SonicSwapMusic');
+
+    // Verifica si el directorio existe
+    if (!await musicDirectory.exists()) {
+      throw Exception('El directorio SonicSwapMusic no existe.');
+    }
+
+    // Normaliza el título proporcionado
+    final normalizedTitle = _normalizeString(title);
+
+    // Lista todos los archivos en el directorio
+    final files = musicDirectory.listSync();
+
+    // Busca un archivo cuyo nombre normalizado coincida con el título normalizado
+    for (var file in files) {
+      if (file is File) {
+        final fileName =
+            file.path.split('/').last; // Obtén solo el nombre del archivo
+        final normalizedFileName = _normalizeString(fileName);
+
+        if (normalizedFileName.contains(normalizedTitle)) {
+          if (kDebugMode) {
+            print('Archivo encontrado: ${file.path}');
+          }
+          return file.path; // Devuelve la ruta absoluta del archivo
+        }
+      }
+    }
+
+    // Si no se encuentra el archivo, lanza una excepción
+    throw Exception('No se encontró un archivo con el título: $title');
+  } catch (e) {
+    if (kDebugMode) {
+      print('Error al buscar el archivo: $e');
+    }
+    return null; // Devuelve null si ocurre un error
+  }
+}
+
+// Método para normalizar cadenas (elimina caracteres especiales, convierte a minúsculas, etc.)
+String _normalizeString(String input) {
+  return input
+      .toLowerCase()
+      .replaceAll(' ', '_') // Reemplaza espacios por guiones bajos
+      .replaceAll(RegExp(r'[^\w\d_]'), ''); // Elimina caracteres especiales
 }

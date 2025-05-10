@@ -25,6 +25,7 @@ Future<void> main() async {
   await PlaylistDbService.database;
 
   await _initializeApp();
+  await listFilesInDownloadDirectory();
 
   runApp(const MyApp());
 }
@@ -45,6 +46,30 @@ Future<void> _initializeApp() async {
   } else {
     if (kDebugMode) {
       print('El directorio ya existe: ${downloadDirectory.path}');
+    }
+  }
+}
+
+Future<void> listFilesInDownloadDirectory() async {
+  final directory = await getApplicationSupportDirectory();
+  final downloadDirectory = Directory('${directory.path}/SonicSwapMusic');
+
+  if (await downloadDirectory.exists()) {
+    final files = downloadDirectory.listSync();
+    if (files.isEmpty) {
+      if (kDebugMode) {
+        print('El directorio está vacío.');
+      }
+    } else {
+      for (var file in files) {
+        if (kDebugMode) {
+          print('Archivo encontrado: ${file.path}');
+        }
+      }
+    }
+  } else {
+    if (kDebugMode) {
+      print('El directorio no existe.');
     }
   }
 }
