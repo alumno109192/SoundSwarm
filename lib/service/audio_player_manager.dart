@@ -88,121 +88,103 @@ class AudioPlayerManager extends ChangeNotifier {
   }
 
   // MÉTODO PRINCIPAL DE REPRODUCCIÓN - SIMPLIFICADO
-  Future<void> playSong(BuildContext context, YouTubeVideo video) async {
+  Future<void> playSong(
+    BuildContext context,
+    YouTubeVideo video, {
+    bool isLocal = false,
+  }) async {
     try {
-      // Obtener SIEMPRE un audioUrl fresco
-      final audioService = AudioService();
-      Map<String, dynamic> audioUrl = await audioService.getAudioUrl(
-        video.videoId,
-      );
+      if (isLocal) {
+        // Reproducción desde un archivo local
+        final filePath = await getAbsolutePath(video.title);
 
-      if (audioUrl.isEmpty || !audioUrl['streamUrl'].startsWith('http')) {
-        throw Exception('URL de audio inválida');
+        if (filePath == null) {
+          throw Exception(
+            'No se encontró el archivo local para: ${video.title}',
+          );
+        }
+
+        final file = File(filePath);
+        if (!await file.exists()) {
+          throw Exception(
+            'El archivo no existe en la ruta especificada: $filePath',
+          );
+        }
+
+        final mediaItem = MediaItem(
+          id: video.videoId,
+          title: video.title,
+          artist: video.channelTitle,
+          artUri: Uri.parse(video.thumbnailUrl),
+          duration:
+              video.duration != null
+                  ? Duration(seconds: video.duration!.inSeconds)
+                  : null,
+        );
+
+        await _audioPlayer.stop();
+        await _audioPlayer.setAudioSource(
+          AudioSource.uri(Uri.file(filePath), tag: mediaItem),
+        );
+
+        _isPlaying = true;
+        onPlayStateChanged?.call(true);
+        onSongChanged?.call(video);
+        onThumbnailChanged?.call(video.thumbnailUrl);
+
+        await _audioPlayer.play();
+
+        if (kDebugMode) {
+          print('Reproduciendo archivo local: $filePath');
+        }
+      } else {
+        // Reproducción desde una URL remota
+        final audioService = AudioService();
+        Map<String, dynamic> audioUrl = await audioService.getAudioUrl(
+          video.videoId,
+        );
+
+        if (audioUrl.isEmpty || !audioUrl['streamUrl'].startsWith('http')) {
+          throw Exception('URL de audio inválida');
+        }
+
+        final mediaItem = MediaItem(
+          id: video.videoId,
+          title: video.title,
+          artist: video.channelTitle,
+          artUri: Uri.parse(video.thumbnailUrl),
+          duration:
+              audioUrl['duration'] != null
+                  ? Duration(seconds: audioUrl['duration'])
+                  : null,
+        );
+
+        await _audioPlayer.stop();
+        await _audioPlayer.setAudioSource(
+          AudioSource.uri(Uri.parse(audioUrl['streamUrl']), tag: mediaItem),
+        );
+
+        _isPlaying = true;
+        onPlayStateChanged?.call(true);
+        onSongChanged?.call(video);
+        onThumbnailChanged?.call(video.thumbnailUrl);
+
+        await _audioPlayer.play();
+
+        audioService.dispose();
+
+        if (kDebugMode) {
+          print('Reproduciendo desde URL remota: ${audioUrl['streamUrl']}');
+        }
       }
-
-      // Probar la URL con un HEAD request (opcional, para debug)
-      // Puedes usar http.head(Uri.parse(audioUrl)) para verificar el Content-Type
-
-      final mediaItem = MediaItem(
-        id: video.videoId,
-        title: video.title,
-        artist: video.channelTitle,
-        artUri: Uri.parse(video.thumbnailUrl),
-        duration:
-            audioUrl['duration'] != null
-                ? Duration(seconds: audioUrl['duration'])
-                : null, // Duración opcional
-      );
-
-      await _audioPlayer.stop();
-      await _audioPlayer.setAudioSource(
-        AudioSource.uri(Uri.parse(audioUrl['streamUrl']), tag: mediaItem),
-      );
-
-      _isPlaying = true;
-      onPlayStateChanged?.call(true);
-
-      // Notificar UI
-      onSongChanged?.call(video);
-      onThumbnailChanged?.call(video.thumbnailUrl);
-      await _audioPlayer.play();
-
-      audioService.dispose();
     } catch (e) {
       if (kDebugMode) {
-        print('Error definitivo al reproducir audio: $e');
-        print('URL obtenida: ${video.audioUrl}');
+        print('Error al reproducir: $e');
       }
       if (context.mounted) {
         ScaffoldMessenger.of(
           context,
         ).showSnackBar(SnackBar(content: Text('Error al reproducir: $e')));
-      }
-    }
-  }
-
-  Future<void> playSongFromFile(
-    BuildContext context,
-    String relativePath,
-    YouTubeVideo video,
-  ) async {
-    try {
-      // Reconstruye la ruta absoluta
-      final filePath = await getAbsolutePath(video.title);
-
-      // Verifica si el archivo existe
-      final file = File(filePath!);
-      if (!await file.exists()) {
-        throw Exception(
-          'El archivo no existe en la ruta especificada: $filePath',
-        );
-      }
-
-      // Crea un MediaItem para la canción
-      final mediaItem = MediaItem(
-        id: video.videoId,
-        title: video.title,
-        artist: video.channelTitle,
-        artUri: Uri.parse(video.thumbnailUrl),
-        duration:
-            video.duration != null
-                ? Duration(seconds: video.duration!.inSeconds)
-                : null,
-      );
-
-      // Detén cualquier reproducción actual
-      await _audioPlayer.stop();
-
-      // Configura el archivo local como fuente de audio
-      await _audioPlayer.setAudioSource(
-        AudioSource.uri(Uri.file(filePath), tag: mediaItem),
-      );
-
-      _isPlaying = true;
-      onPlayStateChanged?.call(true);
-      _currentSong = video;
-      _currentThumbnailUrl = video.thumbnailUrl;
-      _relatedSongs = [_currentSong!];
-      _currentSongIndex = 0;
-      _position = Duration.zero;
-      // Notifica a la UI sobre la canción actual y la miniatura
-      onSongChanged?.call(video);
-      onThumbnailChanged?.call(video.thumbnailUrl);
-
-      // Inicia la reproducción
-      await _audioPlayer.play();
-
-      if (kDebugMode) {
-        print('Reproduciendo archivo local: $filePath');
-      }
-    } catch (e) {
-      if (kDebugMode) {
-        print('Error al reproducir archivo local: $e');
-      }
-      if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error al reproducir archivo local: $e')),
-        );
       }
     }
   }
@@ -469,8 +451,9 @@ class AudioPlayerManager extends ChangeNotifier {
   // Método para reproducir todas las canciones
   Future<void> playAllSongs(
     BuildContext context,
-    List<YouTubeVideo> playlist,
-  ) async {
+    List<YouTubeVideo> playlist, {
+    bool isLocal = false,
+  }) async {
     if (playlist.isEmpty) {
       ScaffoldMessenger.of(
         context,
@@ -487,7 +470,8 @@ class AudioPlayerManager extends ChangeNotifier {
       // Reproducir cada canción en secuencia
       for (int i = 0; i < playlist.length; i++) {
         final song = playlist[i];
-        await playSong(context, song);
+        if (!context.mounted) return;
+        await playSong(context, song, isLocal: isLocal);
 
         // Esperar a que la canción termine antes de continuar con la siguiente
         await _audioPlayer.processingStateStream.firstWhere(
@@ -535,8 +519,9 @@ class AudioPlayerManager extends ChangeNotifier {
   /// Reproduce todas las canciones de la lista en orden aleatorio
   Future<void> playAllRandomSong(
     BuildContext context,
-    List<YouTubeVideo> playlist,
-  ) async {
+    List<YouTubeVideo> playlist, {
+    bool isLocal = false,
+  }) async {
     if (playlist.isEmpty) {
       ScaffoldMessenger.of(
         context,
@@ -544,60 +529,21 @@ class AudioPlayerManager extends ChangeNotifier {
       return;
     }
 
-    // Lista para rastrear las últimas 5 canciones reproducidas
-    final List<YouTubeVideo> recentlyPlayed = [];
-
     try {
-      // Mezclar la lista de canciones
       final random = Random();
       final shuffledPlaylist = List<YouTubeVideo>.from(playlist)
         ..shuffle(random);
 
-      // Mostrar indicador de carga
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Cargando playlist aleatoria...')),
-      );
+      for (final song in shuffledPlaylist) {
+        if (!context.mounted) return;
+        await playSong(context, song, isLocal: isLocal);
 
-      // Función para reproducir la siguiente canción aleatoria
-      Future<void> playNextRandomSong() async {
-        // Filtrar canciones que no estén en las últimas 5 reproducidas
-        final availableSongs =
-            shuffledPlaylist
-                .where((song) => !recentlyPlayed.contains(song))
-                .toList();
-
-        if (availableSongs.isEmpty) {
-          if (kDebugMode) {
-            print('No hay canciones disponibles fuera de las últimas 5');
-          }
-          return;
-        }
-
-        // Seleccionar una canción aleatoria de las disponibles
-        final nextSong = availableSongs[random.nextInt(availableSongs.length)];
-
-        // Reproducir la canción
-        await playSong(context, nextSong);
-
-        // Actualizar la lista de canciones reproducidas recientemente
-        recentlyPlayed.add(nextSong);
-        if (recentlyPlayed.length > 5) {
-          recentlyPlayed.removeAt(0); // Mantener solo las últimas 5 canciones
-        }
-
-        // Esperar a que la canción termine antes de reproducir la siguiente
+        // Esperar a que la canción termine antes de continuar con la siguiente
         await _audioPlayer.processingStateStream.firstWhere(
           (state) => state == ProcessingState.completed,
         );
-
-        // Llamar recursivamente para reproducir la siguiente canción
-        await playNextRandomSong();
       }
 
-      // Reproducir la primera canción aleatoria
-      await playNextRandomSong();
-
-      // Notificar al usuario cuando termine la playlist
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Playlist aleatoria completada')),
@@ -607,7 +553,6 @@ class AudioPlayerManager extends ChangeNotifier {
       if (kDebugMode) {
         print('Error al reproducir la playlist aleatoria: $e');
       }
-
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(

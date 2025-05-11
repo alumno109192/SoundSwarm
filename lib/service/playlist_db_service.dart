@@ -114,7 +114,9 @@ class PlaylistDbService {
       )
     ''');
 
-    print('Todas las tablas han sido creadas o ya existen.');
+    if (kDebugMode) {
+      print('Todas las tablas han sido creadas o ya existen.');
+    }
   }
 
   static Future<void> addSongToPlaylist(
@@ -255,9 +257,10 @@ class PlaylistDbService {
     );
   }
 
-  Future<List<Map<String, dynamic>>> getDownloadedSongs() async {
+  Future<List<YouTubeVideo>> getDownloadedSongs() async {
     final db = await openDatabase('sonicswap.db');
-    return await db.query('downloads');
+    final result = await db.query('downloads');
+    return result.map((map) => YouTubeVideo.fromMap(map)).toList();
   }
 
   FutureOr<YouTubeVideo> getDownloadSongById(String id) async {

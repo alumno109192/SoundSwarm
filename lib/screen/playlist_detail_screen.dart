@@ -53,6 +53,7 @@ class _PlaylistDetailScreenState extends State<PlaylistDetailScreen> {
         _playlist = playlist;
       });
     } catch (e) {
+      if (!mounted) return;
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(SnackBar(content: Text('Error al cargar playlist: $e')));

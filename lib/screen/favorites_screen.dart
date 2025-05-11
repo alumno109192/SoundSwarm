@@ -21,12 +21,6 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
 
   Future<void> _loadFavorites() async {
     final List<YouTubeVideo> songs = await PlaylistDbService.getFavoriteSongs();
-    if (songs.isEmpty) {
-      setState(() {
-        _favoriteSongs = [];
-      });
-      return;
-    }
     setState(() {
       _favoriteSongs = songs;
     });
@@ -37,23 +31,35 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
     await database.delete('favorites', where: 'videoId = ?', whereArgs: [id]);
   }
 
-  Future<void> _playSong(YouTubeVideo song) async {
-    try {
-      await AudioPlayerManager().playSong(context, song);
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('Reproduciendo: ${song.title}')));
-    } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error al reproducir la canción: $e')),
-      );
-    }
+  Future<void> _playAllSongs() async {
+    await AudioPlayerManager.instance.playAllSongs(context, _favoriteSongs);
+  }
+
+  Future<void> _playRandomSong() async {
+    await AudioPlayerManager.instance.playAllRandomSong(
+      context,
+      _favoriteSongs,
+    );
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Favoritos')),
+      appBar: AppBar(
+        title: const Text('Favoritos'),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.queue_music),
+            tooltip: 'Reproducir todas las canciones',
+            onPressed: _playAllSongs,
+          ),
+          IconButton(
+            icon: const Icon(Icons.shuffle),
+            tooltip: 'Reproducir canción aleatoria',
+            onPressed: _playRandomSong,
+          ),
+        ],
+      ),
       body:
           _favoriteSongs.isEmpty
               ? const Center(
@@ -93,7 +99,11 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
                             Icons.play_arrow,
                             color: Colors.green,
                           ),
-                          onPressed: () => _playSong(song),
+                          onPressed:
+                              () => AudioPlayerManager.instance.playSong(
+                                context,
+                                song,
+                              ),
                         ),
                         IconButton(
                           icon: const Icon(Icons.delete, color: Colors.red),
@@ -102,12 +112,11 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
                             setState(() {
                               _favoriteSongs.removeAt(index);
                             });
+                            if (!context.mounted) return;
                             ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(
-                                content: const Text(
-                                  'Canción eliminada de favoritos',
-                                ),
-                                duration: const Duration(seconds: 2),
+                              const SnackBar(
+                                content: Text('Canción eliminada de favoritos'),
+                                duration: Duration(seconds: 2),
                               ),
                             );
                             _loadFavorites(); // Recargar la lista después de eliminar

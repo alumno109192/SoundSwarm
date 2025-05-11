@@ -13,7 +13,7 @@ class DownloadsScreen extends StatefulWidget {
 }
 
 class _DownloadsScreenState extends State<DownloadsScreen> {
-  List<Map<String, dynamic>> downloadedSongs = [];
+  List<YouTubeVideo> downloadedSongs = [];
   final AudioPlayer _audioPlayer = AudioPlayer();
 
   @override
@@ -34,7 +34,7 @@ class _DownloadsScreenState extends State<DownloadsScreen> {
       // Obtén las canciones descargadas desde SQLite
       final songs = await PlaylistDbService().getDownloadedSongs();
       setState(() {
-        downloadedSongs = songs;
+        downloadedSongs = songs.cast<YouTubeVideo>();
       });
     } catch (e) {
       // Manejo de errores
@@ -59,8 +59,10 @@ class _DownloadsScreenState extends State<DownloadsScreen> {
 
       // Actualiza la lista de canciones descargadas
       setState(() {
-        downloadedSongs.removeWhere((song) => song['id'] == id);
+        downloadedSongs.removeWhere((song) => song.videoId == id);
       });
+
+      if (!mounted) return;
 
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -74,18 +76,15 @@ class _DownloadsScreenState extends State<DownloadsScreen> {
     }
   }
 
-  Future<void> _playSong(Map<String, dynamic> songClick) async {
+  Future<void> _playSong(YouTubeVideo songClick) async {
     try {
       final YouTubeVideo video = await PlaylistDbService().getDownloadSongById(
-        songClick['id'],
+        songClick.videoId,
       );
 
+      if (!mounted) return;
       // Llama al servicio AudioPlayerManager para reproducir la canción
-      await AudioPlayerManager().playSongFromFile(
-        context,
-        video.audioUrl!,
-        video,
-      );
+      await AudioPlayerManager().playSong(context, video, isLocal: true);
 
       // Verifica si el widget sigue montado antes de usar el contexto
       if (!mounted) return;
@@ -100,10 +99,73 @@ class _DownloadsScreenState extends State<DownloadsScreen> {
     }
   }
 
+  Future<void> _playAllSongs() async {
+    try {
+      if (downloadedSongs.isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('No hay canciones descargadas')),
+        );
+        return;
+      }
+
+      final List<YouTubeVideo> videos =
+          await PlaylistDbService().getDownloadedSongs();
+      if (!mounted) return;
+      await AudioPlayerManager().playAllSongs(context, videos, isLocal: true);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Reproduciendo todas las canciones')),
+      );
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error al reproducir todas las canciones: $e')),
+      );
+    }
+  }
+
+  Future<void> _playRandomSong() async {
+    try {
+      if (downloadedSongs.isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('No hay canciones descargadas')),
+        );
+        return;
+      }
+
+      final List<YouTubeVideo> videos =
+          await PlaylistDbService().getDownloadedSongs();
+      if (!mounted) return;
+      await AudioPlayerManager().playAllRandomSong(
+        context,
+        videos,
+        isLocal: true,
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error al reproducir canción aleatoria: $e')),
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Descargas')),
+      appBar: AppBar(
+        title: const Text('Descargas'),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.queue_music),
+            tooltip: 'Reproducir todas las canciones',
+            onPressed: _playAllSongs,
+          ),
+          IconButton(
+            icon: const Icon(Icons.shuffle),
+            tooltip: 'Reproducir canción aleatoria',
+            onPressed: _playRandomSong,
+          ),
+        ],
+      ),
       body:
           downloadedSongs.isEmpty
               ? const Center(
@@ -118,11 +180,26 @@ class _DownloadsScreenState extends State<DownloadsScreen> {
                   final song = downloadedSongs[index];
 
                   return ListTile(
-                    leading:
-                        song['thumbnailUrl'] != null
-                            ? Image.network(song['thumbnailUrl'])
-                            : const Icon(Icons.music_note),
-                    title: Text(song['title']),
+                    leading: SizedBox(
+                      width:
+                          MediaQuery.of(context).size.width *
+                          0.2, // 20% del ancho de la pantalla
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(8),
+                        child: Image.network(
+                          song.thumbnailUrl,
+                          fit: BoxFit.cover,
+                          errorBuilder: (context, error, stackTrace) {
+                            return const Icon(
+                              Icons.music_note,
+                              size: 50,
+                              color: Colors.grey,
+                            );
+                          },
+                        ),
+                      ),
+                    ),
+                    title: Text(song.title),
                     trailing: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
@@ -136,7 +213,7 @@ class _DownloadsScreenState extends State<DownloadsScreen> {
                         IconButton(
                           icon: const Icon(Icons.delete, color: Colors.red),
                           onPressed:
-                              () => _deleteSong(song['id'], song['filePath']),
+                              () => _deleteSong(song.videoId, song.audioUrl!),
                         ),
                       ],
                     ),

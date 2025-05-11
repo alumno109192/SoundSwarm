@@ -179,6 +179,7 @@ class SongSearchDelegate extends SearchDelegate<String> {
                           await OfflineModeService.getSearchResults(query);
                       if (cachedResults.isNotEmpty) {
                         _musicProvider.setOfflineMode(true);
+                        if (!context.mounted) return;
                         showResults(context);
                         // Volver al modo online después
                         Future.delayed(const Duration(seconds: 2), () {
@@ -507,7 +508,8 @@ class SongSearchDelegate extends SearchDelegate<String> {
                       video,
                     );
                     if (isPayed) {
-                      // Mostrar diálogo para seleccionar la ubicación de descarga
+                      if (!context.mounted) return;
+                      //logo para seleccionar la ubicación de descarga
                       _showSaveDownloadDialog(context, video);
                     }
                   },
