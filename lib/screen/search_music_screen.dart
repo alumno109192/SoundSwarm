@@ -1,8 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:file_picker/file_picker.dart';
+import 'package:soundswarm/model/youtube_video.dart';
+import 'package:soundswarm/service/audio_player_manager.dart';
 import 'package:soundswarm/service/playlist_db_service.dart';
 import 'dart:io';
 import 'package:path/path.dart' as p; // Importa el paquete path
+import 'dart:math'; // Importa el paquete math para generar números aleatorios
 
 class SearchMusicScreen extends StatefulWidget {
   const SearchMusicScreen({super.key});
@@ -155,6 +158,67 @@ class _SearchMusicScreenState extends State<SearchMusicScreen>
     }
   }
 
+  Future<void> _playSong(String songPath) async {
+    try {
+      final video = YouTubeVideo.fromFile(
+        songPath,
+      ); // Convierte la ruta en un objeto YouTubeVideo
+      await AudioPlayerManager.instance.playSong(context, video, isLocal: true);
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Reproduciendo: ${video.title}')));
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error al reproducir la canción: $e')),
+      );
+    }
+  }
+
+  Future<void> _playAllSongs() async {
+    try {
+      final videos =
+          _searchResults
+              .map((songPath) => YouTubeVideo.fromFile(songPath))
+              .toList();
+      await AudioPlayerManager.instance.playAllSongs(
+        context,
+        videos,
+        isLocal: true,
+      );
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Reproduciendo todas las canciones')),
+      );
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error al reproducir todas las canciones: $e')),
+      );
+    }
+  }
+
+  Future<void> _playRandomSong() async {
+    try {
+      if (_searchResults.isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('No hay canciones para reproducir')),
+        );
+        return;
+      }
+
+      final randomIndex = Random().nextInt(_searchResults.length);
+      final randomSongPath = _searchResults[randomIndex];
+      final video = YouTubeVideo.fromFile(randomSongPath);
+
+      await AudioPlayerManager.instance.playSong(context, video, isLocal: true);
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Reproduciendo: ${video.title}')));
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error al reproducir canción aleatoria: $e')),
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -194,6 +258,21 @@ class _SearchMusicScreenState extends State<SearchMusicScreen>
             },
           ),
           const SizedBox(height: 20),
+          if (_searchResults.isNotEmpty)
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+              children: [
+                IconButton(
+                  icon: const Icon(Icons.queue_music),
+                  onPressed: () => _playAllSongs(),
+                ),
+                IconButton(
+                  icon: const Icon(Icons.shuffle),
+                  onPressed: () => _playRandomSong(),
+                ),
+              ],
+            ),
+          const SizedBox(height: 10),
           Expanded(
             child:
                 _searchResults.isEmpty
@@ -214,6 +293,13 @@ class _SearchMusicScreenState extends State<SearchMusicScreen>
                         return ListTile(
                           leading: const Icon(Icons.music_note),
                           title: Text(songName),
+                          trailing: IconButton(
+                            icon: const Icon(
+                              Icons.play_arrow,
+                              color: Colors.green,
+                            ),
+                            onPressed: () => _playSong(songPath),
+                          ),
                           onTap: () {
                             ScaffoldMessenger.of(context).showSnackBar(
                               SnackBar(

@@ -148,4 +148,15 @@ class YouTubeVideo {
       audioUrlTimestamp: DateTime.now().millisecondsSinceEpoch,
     );
   }
+
+  factory YouTubeVideo.fromFile(String filePath) {
+    final title = filePath.split('/').last; // Extrae el nombre del archivo
+    return YouTubeVideo(
+      videoId: '', // Provide a default or meaningful value
+      title: title,
+      channelTitle: '', // Provide a default or meaningful value
+      thumbnailUrl: '', // Provide a default or meaningful value
+      audioUrl: filePath,
+    );
+  }
 }
