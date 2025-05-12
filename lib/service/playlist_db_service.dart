@@ -114,6 +114,13 @@ class PlaylistDbService {
       )
     ''');
 
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS directories (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        path TEXT UNIQUE
+      )
+    ''');
+
     if (kDebugMode) {
       print('Todas las tablas han sido creadas o ya existen.');
     }
@@ -337,5 +344,44 @@ class PlaylistDbService {
         print('No se encontró la base de datos para eliminar.');
       }
     }
+  }
+
+  Future<void> saveDirectory(String path) async {
+    final db = await PlaylistDbService.database;
+    await db.insert(
+      'directories',
+      {'path': path},
+      conflictAlgorithm: ConflictAlgorithm.replace, // Evita duplicados
+    );
+  }
+
+  /// Obtiene todos los directorios guardados
+  Future<List<String>> getSavedDirectories() async {
+    final db = await PlaylistDbService.database;
+    final directories = await db.query('directories');
+    return directories.map((e) => e['path'] as String).toList();
+  }
+
+  /// Elimina un directorio guardado
+  Future<void> deleteDirectory(String path) async {
+    final db = await PlaylistDbService.database;
+    await db.delete('directories', where: 'path = ?', whereArgs: [path]);
+  }
+
+  /// Verifica si un directorio ya está guardado
+  Future<bool> isDirectorySaved(String path) async {
+    final db = await PlaylistDbService.database;
+    final List<Map<String, dynamic>> maps = await db.query(
+      'directories',
+      where: 'path = ?',
+      whereArgs: [path],
+    );
+    return maps.isNotEmpty;
+  }
+
+  /// Elimina todos los directorios guardados
+  Future<void> deleteAllDirectories() async {
+    final db = await PlaylistDbService.database;
+    await db.delete('directories');
   }
 }

@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:file_picker/file_picker.dart';
+import 'package:soundswarm/service/playlist_db_service.dart';
+import 'dart:io';
+import 'package:path/path.dart' as p; // Importa el paquete path
 
 class SearchMusicScreen extends StatefulWidget {
   const SearchMusicScreen({super.key});
@@ -11,23 +14,145 @@ class SearchMusicScreen extends StatefulWidget {
 class _SearchMusicScreenState extends State<SearchMusicScreen>
     with SingleTickerProviderStateMixin {
   final TextEditingController _searchController = TextEditingController();
-  List<String> _searchResults = []; // Lista de resultados de búsqueda simulados
+  List<String> _allSongs = []; // Lista de todas las canciones
+  List<String> _searchResults = []; // Resultados de búsqueda
   bool _isSearching = false;
 
   late TabController _tabController = TabController(length: 2, vsync: this);
-  String? _selectedDirectory;
-  List<String> _directoryFiles = [];
+  final List<String> _savedDirectories = []; // Lista de directorios guardados
 
   @override
   void initState() {
     super.initState();
     _tabController = TabController(length: 2, vsync: this);
+    _loadSavedDirectoriesAndSongs(); // Carga los directorios y canciones al iniciar
   }
 
   @override
   void dispose() {
     _tabController.dispose();
     super.dispose();
+  }
+
+  Future<void> _loadSavedDirectoriesAndSongs() async {
+    try {
+      final List<String> directories =
+          await PlaylistDbService().getSavedDirectories();
+
+      // Carga todas las canciones de los directorios guardados
+      final allSongs = <String>[];
+      if (directories.isEmpty) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('No hay directorios guardados')),
+          );
+        }
+        return;
+      }
+      for (var directory in directories) {
+        final musicFiles = _getMusicFilesFromDirectory(directory);
+        if (musicFiles.isNotEmpty) {
+          allSongs.addAll(musicFiles);
+        }
+      }
+
+      setState(() {
+        _savedDirectories.clear();
+        _savedDirectories.addAll(
+          directories,
+        ); // Actualiza los directorios guardados
+        _allSongs = allSongs;
+        _searchResults = List.from(
+          allSongs,
+        ); // Actualiza los resultados de búsqueda
+      });
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error al cargar los directorios: $e')),
+        );
+      }
+    }
+  }
+
+  List<String> _getMusicFilesFromDirectory(String directoryPath) {
+    try {
+      final directory = Directory(directoryPath);
+
+      // Verifica si el directorio existe
+      if (!directory.existsSync()) {
+        throw Exception('El directorio no existe: $directoryPath');
+      }
+
+      // Lista los archivos en el directorio y filtra solo los archivos de música
+      final musicFiles =
+          directory
+              .listSync()
+              .where(
+                (file) =>
+                    file is File &&
+                    (file.path.endsWith('.mp3') ||
+                        file.path.endsWith('.wav') ||
+                        file.path.endsWith('.flac')),
+              )
+              .map((file) => file.path)
+              .toList();
+
+      return musicFiles;
+    } catch (e) {
+      // Manejo de errores
+      debugPrint('Error al obtener archivos de música: $e');
+      return [];
+    }
+  }
+
+  void _performSearch(String query) {
+    setState(() {
+      _isSearching = true;
+    });
+
+    Future.delayed(const Duration(milliseconds: 500), () {
+      setState(() {
+        if (query.isEmpty) {
+          // Si no hay texto ingresado, muestra todas las canciones
+          _searchResults = _allSongs;
+        } else {
+          // Filtra las canciones según el texto ingresado
+          _searchResults =
+              _allSongs
+                  .where(
+                    (song) => song.toLowerCase().contains(query.toLowerCase()),
+                  )
+                  .toList();
+        }
+        _isSearching = false;
+      });
+    });
+  }
+
+  Future<void> _pickDirectory() async {
+    String? directoryPath = await FilePicker.platform.getDirectoryPath();
+    if (directoryPath != null) {
+      try {
+        // Guarda el directorio en SQLite
+        await PlaylistDbService().saveDirectory(directoryPath);
+
+        // Actualiza la lista de directorios guardados
+        await _loadSavedDirectoriesAndSongs();
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Directorio guardado: $directoryPath')),
+        );
+      } catch (e) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error al guardar el directorio: $e')),
+        );
+      }
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('No se seleccionó ningún directorio')),
+      );
+    }
   }
 
   @override
@@ -45,50 +170,30 @@ class _SearchMusicScreenState extends State<SearchMusicScreen>
       ),
       body: TabBarView(
         controller: _tabController,
-        children: [
-          // Búsqueda por texto
-          _buildTextSearchTab(),
-          // Búsqueda por directorios
-          _buildDirectorySearchTab(),
-        ],
+        children: [_buildTextSearchTab(), _buildDirectorySearchTab()],
       ),
     );
   }
 
-  // Pestaña de búsqueda por texto
   Widget _buildTextSearchTab() {
     return Padding(
       padding: const EdgeInsets.all(16.0),
       child: Column(
         children: [
-          // Campo de búsqueda
           TextField(
             controller: _searchController,
             decoration: InputDecoration(
               labelText: 'Buscar canciones o artistas',
               prefixIcon: const Icon(Icons.search),
-              suffixIcon:
-                  _isSearching
-                      ? const Padding(
-                        padding: EdgeInsets.all(12.0),
-                        child: SizedBox(
-                          width: 16,
-                          height: 16,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        ),
-                      )
-                      : null,
               border: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(8),
               ),
             ),
             onChanged: (query) {
-              // Simular búsqueda automática
               _performSearch(query);
             },
           ),
           const SizedBox(height: 20),
-          // Resultados de búsqueda
           Expanded(
             child:
                 _searchResults.isEmpty
@@ -101,16 +206,18 @@ class _SearchMusicScreenState extends State<SearchMusicScreen>
                     : ListView.builder(
                       itemCount: _searchResults.length,
                       itemBuilder: (context, index) {
+                        final songPath = _searchResults[index];
+                        final songName =
+                            songPath
+                                .split('/')
+                                .last; // Extrae el nombre del archivo
                         return ListTile(
                           leading: const Icon(Icons.music_note),
-                          title: Text(_searchResults[index]),
+                          title: Text(songName),
                           onTap: () {
-                            // Acción al seleccionar una canción
                             ScaffoldMessenger.of(context).showSnackBar(
                               SnackBar(
-                                content: Text(
-                                  'Seleccionaste: ${_searchResults[index]}',
-                                ),
+                                content: Text('Seleccionaste: $songName'),
                               ),
                             );
                           },
@@ -123,7 +230,6 @@ class _SearchMusicScreenState extends State<SearchMusicScreen>
     );
   }
 
-  // Pestaña de búsqueda por directorios
   Widget _buildDirectorySearchTab() {
     return Padding(
       padding: const EdgeInsets.all(16.0),
@@ -135,98 +241,30 @@ class _SearchMusicScreenState extends State<SearchMusicScreen>
             label: const Text('Seleccionar Directorio'),
           ),
           const SizedBox(height: 20),
-          if (_selectedDirectory != null)
+          if (_savedDirectories.isNotEmpty)
             Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'Directorio seleccionado:',
-                    style: Theme.of(context).textTheme.titleMedium,
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    _selectedDirectory!,
-                    style: const TextStyle(color: Colors.blue),
-                  ),
-                  const SizedBox(height: 20),
-                  Expanded(
-                    child:
-                        _directoryFiles.isEmpty
-                            ? const Center(
-                              child: Text(
-                                'No se encontraron archivos de música en este directorio.',
-                                style: TextStyle(color: Colors.grey),
-                              ),
-                            )
-                            : ListView.builder(
-                              itemCount: _directoryFiles.length,
-                              itemBuilder: (context, index) {
-                                return ListTile(
-                                  leading: const Icon(Icons.music_note),
-                                  title: Text(_directoryFiles[index]),
-                                  onTap: () {
-                                    // Acción al seleccionar un archivo
-                                    ScaffoldMessenger.of(context).showSnackBar(
-                                      SnackBar(
-                                        content: Text(
-                                          'Seleccionaste: ${_directoryFiles[index]}',
-                                        ),
-                                      ),
-                                    );
-                                  },
-                                );
-                              },
-                            ),
-                  ),
-                ],
+              child: ListView.builder(
+                itemCount: _savedDirectories.length,
+                itemBuilder: (context, index) {
+                  final directory = _savedDirectories[index];
+                  return ListTile(
+                    leading: const Icon(Icons.folder),
+                    title: Text(
+                      p.basename(directory),
+                    ), // Muestra solo el nombre del directorio
+                  );
+                },
+              ),
+            )
+          else
+            const Center(
+              child: Text(
+                'No hay directorios guardados.',
+                style: TextStyle(color: Colors.grey),
               ),
             ),
         ],
       ),
     );
-  }
-
-  // Método para seleccionar un directorio
-  Future<void> _pickDirectory() async {
-    String? directoryPath = await FilePicker.platform.getDirectoryPath();
-    setState(() {
-      _selectedDirectory = directoryPath;
-      _directoryFiles = _getMusicFilesFromDirectory(directoryPath!);
-    });
-  }
-
-  // Simulación de obtención de archivos de música en un directorio
-  List<String> _getMusicFilesFromDirectory(String directoryPath) {
-    // Aquí puedes implementar la lógica para listar archivos reales
-    // Por ahora, simulamos con una lista de archivos
-    return ['song1.mp3', 'song2.mp3', 'song3.mp3', 'song4.mp3'];
-  }
-
-  // Simulación de búsqueda automática
-  void _performSearch(String query) {
-    setState(() {
-      _isSearching = true;
-    });
-
-    Future.delayed(const Duration(milliseconds: 500), () {
-      final allSongs = [
-        'Song 1 - Artist A',
-        'Song 2 - Artist B',
-        'Song 3 - Artist C',
-        'Song 4 - Artist D',
-        'Song 5 - Artist E',
-      ];
-
-      setState(() {
-        _searchResults =
-            allSongs
-                .where(
-                  (song) => song.toLowerCase().contains(query.toLowerCase()),
-                )
-                .toList();
-        _isSearching = false;
-      });
-    });
   }
 }
