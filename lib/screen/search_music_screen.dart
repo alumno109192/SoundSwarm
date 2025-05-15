@@ -219,6 +219,28 @@ class _SearchMusicScreenState extends State<SearchMusicScreen>
     }
   }
 
+  Future<void> _deleteDirectory(String directoryPath) async {
+    try {
+      PlaylistDbService().deleteDirectory(directoryPath);
+
+      setState(() {
+        _savedDirectories.remove(
+          directoryPath,
+        ); // Elimina el directorio de la lista local
+      });
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Directorio eliminado: ${p.basename(directoryPath)}'),
+        ),
+      );
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error al eliminar el directorio: $e')),
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -336,8 +358,15 @@ class _SearchMusicScreenState extends State<SearchMusicScreen>
                   return ListTile(
                     leading: const Icon(Icons.folder),
                     title: Text(
-                      p.basename(directory),
-                    ), // Muestra solo el nombre del directorio
+                      p.basename(
+                        directory,
+                      ), // Muestra solo el nombre del directorio
+                    ),
+                    trailing: IconButton(
+                      icon: const Icon(Icons.delete, color: Colors.red),
+                      tooltip: 'Eliminar directorio',
+                      onPressed: () => _deleteDirectory(directory),
+                    ),
                   );
                 },
               ),
