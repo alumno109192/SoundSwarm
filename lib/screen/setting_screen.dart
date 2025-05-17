@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:file_picker/file_picker.dart';
+import 'package:soundswarm/screen/equalizer_screen.dart'; // Asegúrate de importar la pantalla del ecualizador
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
@@ -73,6 +74,15 @@ class _SettingsScreenState extends State<SettingsScreen> {
             subtitle: Text(_musicPath),
             onTap: _selectMusicDirectory,
             trailing: const Icon(Icons.folder_open),
+          ),
+          ListTile(
+            leading: const Icon(Icons.equalizer),
+            title: const Text('Ecualizador'),
+            onTap: () {
+              Navigator.of(context).push(
+                MaterialPageRoute(builder: (_) => const EqualizerScreen()),
+              );
+            },
           ),
           const ListTile(
             leading: Icon(Icons.info),

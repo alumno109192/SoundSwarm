@@ -121,6 +121,13 @@ class PlaylistDbService {
       )
     ''');
 
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS equalizer (
+        id INTEGER PRIMARY KEY,
+        bands TEXT
+      )
+    ''');
+
     if (kDebugMode) {
       print('Todas las tablas han sido creadas o ya existen.');
     }
@@ -383,5 +390,29 @@ class PlaylistDbService {
   Future<void> deleteAllDirectories() async {
     final db = await PlaylistDbService.database;
     await db.delete('directories');
+  }
+
+  // Guarda la configuración del ecualizador
+  Future<void> saveEqualizerBands(List<double> bands) async {
+    final db = await PlaylistDbService.database;
+    final bandsString = bands.join(',');
+    await db.insert('equalizer', {
+      'id': 1,
+      'bands': bandsString,
+    }, conflictAlgorithm: ConflictAlgorithm.replace);
+  }
+
+  // Recupera la configuración del ecualizador
+  Future<List<double>?> loadEqualizerBands() async {
+    final db = await PlaylistDbService.database;
+    final result = await db.query('equalizer', where: 'id = ?', whereArgs: [1]);
+    if (result.isNotEmpty) {
+      final bandsString = result.first['bands'] as String;
+      return bandsString
+          .split(',')
+          .map((e) => double.tryParse(e) ?? 0)
+          .toList();
+    }
+    return null;
   }
 }
